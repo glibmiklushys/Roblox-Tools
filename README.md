@@ -1,4 +1,4 @@
-<img width="2504" height="1370" alt="image" src="https://github.com/user-attachments/assets/a6584e4c-90c8-4385-a436-9ae5c0c468d1" />> **RTX GRAPHICs**
+**RTX GRAPHICs**
 > A lightweight lighting manipulator that forces "RTX" style graphics on any Roblox game without lagging your PC.
 
 🎛️ Live Sliders: Adjust bloom, sun rays, saturation, and PBR reflections on the fly.
