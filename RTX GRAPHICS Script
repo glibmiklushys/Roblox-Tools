@@ -1,5 +1,5 @@
--- [[ ULTIMATE RESHADE ENGINE v4.5 (Fixed Sliders) ]] --
--- Forces advanced lighting, post-processing, and cinematic reflections.
+-- [[ ULTIMATE RESHADE ENGINE v5.0 ]] --
+-- Features: Sliders, Wet World, Autofocus, Volumetric Fog, Camera Sway, Presets
 
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
@@ -8,7 +8,7 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+local Camera = workspace.CurrentCamera
 
 -- [[ 1. LIGHTING BACKUP & SETUP ]] --
 local originalLighting = {
@@ -22,19 +22,31 @@ local originalLighting = {
 }
 
 local originalReflectance = {}
+local originalAtmo = Lighting:FindFirstChildWhichIsA("Atmosphere")
+local createdAtmo = false
 
--- Clean up any old effects from previous script versions
-local oldFolder = Lighting:FindFirstChild("UltimateReShadeFX")
-if oldFolder then oldFolder:Destroy() end
+-- Clean old instances
 for _, v in ipairs(Lighting:GetChildren()) do
 	if string.find(v.Name, "UR_") then v:Destroy() end
 end
 
--- Create new effects DIRECTLY in Lighting so Roblox actually renders them
+-- Create Post-Processing
 local CC = Instance.new("ColorCorrectionEffect", Lighting); CC.Name = "UR_CC"
 local Bloom = Instance.new("BloomEffect", Lighting); Bloom.Name = "UR_Bloom"
 local SunRays = Instance.new("SunRaysEffect", Lighting); SunRays.Name = "UR_SunRays"
 local Blur = Instance.new("BlurEffect", Lighting); Blur.Name = "UR_Blur"; Blur.Size = 0 
+local DoF = Instance.new("DepthOfFieldEffect", Lighting); DoF.Name = "UR_DoF"; DoF.FarIntensity = 0; DoF.NearIntensity = 0
+
+-- Setup Atmosphere
+local Atmo = originalAtmo
+if not Atmo then
+	Atmo = Instance.new("Atmosphere", Lighting)
+	Atmo.Name = "UR_Atmo"
+	Atmo.Density = 0
+	createdAtmo = true
+end
+local origAtmoDensity = Atmo.Density
+local origAtmoHaze = Atmo.Haze
 
 -- [[ 2. UI FRAMEWORK ]] --
 local ScreenGui = Instance.new("ScreenGui")
@@ -44,8 +56,8 @@ pcall(function() ScreenGui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreG
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 350, 0, 520) 
-MainFrame.Position = UDim2.new(0.5, -175, 0.5, -260)
+MainFrame.Size = UDim2.new(0, 360, 0, 450) 
+MainFrame.Position = UDim2.new(0.5, -180, 0.5, -225)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
@@ -59,7 +71,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
 
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -50, 1, 0); TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "Ultimate ReShade v4.5"
+TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "Ultimate ReShade v5.0 (Full Engine)"
 TitleLabel.TextColor3 = Color3.new(1,1,1); TitleLabel.Font = Enum.Font.GothamBold; TitleLabel.TextSize = 13
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left; TitleLabel.Parent = TitleBar
 
@@ -69,6 +81,7 @@ UnhookBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50); UnhookBtn.Text = "X"
 UnhookBtn.TextColor3 = Color3.new(1,1,1); UnhookBtn.Font = Enum.Font.GothamBold; UnhookBtn.Parent = TitleBar
 Instance.new("UICorner", UnhookBtn).CornerRadius = UDim.new(0, 5)
 
+-- Draggable Logic
 local dragging, dragInput, dragStart, startPos
 TitleBar.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -86,18 +99,24 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 
-local ContentLayout = Instance.new("UIListLayout", MainFrame)
+-- Scrolling Content Frame
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -10, 1, -45)
+ScrollFrame.Position = UDim2.new(0, 5, 0, 40)
+ScrollFrame.BackgroundTransparency = 1
+ScrollFrame.ScrollBarThickness = 4
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 750) -- Extended for new features
+ScrollFrame.Parent = MainFrame
+
+local ContentLayout = Instance.new("UIListLayout", ScrollFrame)
 ContentLayout.Padding = UDim.new(0, 8)
 ContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local spacer = Instance.new("Frame", MainFrame)
-spacer.Size = UDim2.new(1, 0, 0, 35); spacer.BackgroundTransparency = 1
-
--- [[ 3. SLIDER LOGIC ]] --
+-- [[ 3. UI CONTROLS LOGIC ]] --
 local function createSlider(name, min, max, default, callback)
-	local container = Instance.new("Frame", MainFrame)
-	container.Size = UDim2.new(0, 310, 0, 45); container.BackgroundTransparency = 1
+	local container = Instance.new("Frame", ScrollFrame)
+	container.Size = UDim2.new(0, 320, 0, 45); container.BackgroundTransparency = 1
 	
 	local lbl = Instance.new("TextLabel", container)
 	lbl.Size = UDim2.new(1, 0, 0, 15); lbl.BackgroundTransparency = 1
@@ -143,39 +162,54 @@ local function createSlider(name, min, max, default, callback)
 	end
 end
 
+local function createToggle(text, callback)
+	local btn = Instance.new("TextButton", ScrollFrame)
+	btn.Size = UDim2.new(0, 320, 0, 35)
+	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+	btn.Text = text .. ": OFF"
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 13
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+	
+	local state = false
+	btn.MouseButton1Click:Connect(function()
+		state = not state
+		btn.Text = text .. ": " .. (state and "ON" or "OFF")
+		btn.BackgroundColor3 = state and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(45, 45, 50)
+		callback(state)
+	end)
+	return function(forceState)
+		state = forceState
+		btn.Text = text .. ": " .. (state and "ON" or "OFF")
+		btn.BackgroundColor3 = state and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(45, 45, 50)
+		callback(state)
+	end
+end
+
+-- Sliders
 local setSat = createSlider("Saturation", -1, 2, 0, function(val) CC.Saturation = val end)
 local setCon = createSlider("Contrast", -1, 2, 0, function(val) CC.Contrast = val end)
 local setBloom = createSlider("Bloom Intensity", 0, 2, 0, function(val) Bloom.Intensity = val end)
 local setRays = createSlider("SunRays Intensity", 0, 0.5, 0, function(val) SunRays.Intensity = val end)
-local setEnvReflections = createSlider("PBR Reflections (Env Scale)", 0, 1, originalLighting.EnvSpec, function(val) 
-	Lighting.EnvironmentSpecularScale = val
-	Lighting.EnvironmentDiffuseScale = val
+local setEnv = createSlider("PBR Reflections (Env Scale)", 0, 1, originalLighting.EnvSpec, function(val) 
+	Lighting.EnvironmentSpecularScale = val; Lighting.EnvironmentDiffuseScale = val 
 end)
 
--- [[ 4. GLOSSY WORLD TOGGLE ]] --
-local toggleContainer = Instance.new("Frame", MainFrame)
-toggleContainer.Size = UDim2.new(0, 310, 0, 35); toggleContainer.BackgroundTransparency = 1
+-- NEW SLIDERS
+local setFogDen = createSlider("Fog Density (Atmosphere)", 0, 1, origAtmoDensity, function(val) Atmo.Density = val end)
+local setFogHaze = createSlider("Fog Haze (Atmosphere)", 0, 10, origAtmoHaze, function(val) Atmo.Haze = val end)
+local setDoF = createSlider("Autofocus Blur Strength", 0, 1, 0, function(val) 
+	DoF.FarIntensity = val; DoF.NearIntensity = val * 0.5 
+end)
 
-local glossyBtn = Instance.new("TextButton", toggleContainer)
-glossyBtn.Size = UDim2.new(1, 0, 1, 0)
-glossyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
-glossyBtn.Text = "🌧️ Wet / Glossy World: OFF"
-glossyBtn.TextColor3 = Color3.new(1,1,1)
-glossyBtn.Font = Enum.Font.GothamSemibold; glossyBtn.TextSize = 13
-Instance.new("UICorner", glossyBtn).CornerRadius = UDim.new(0, 5)
-
+-- Toggles
 local isGlossy = false
-glossyBtn.MouseButton1Click:Connect(function()
-	isGlossy = not isGlossy
-	glossyBtn.Text = "🌧️ Wet / Glossy World: " .. (isGlossy and "ON" or "OFF")
-	glossyBtn.BackgroundColor3 = isGlossy and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(45, 45, 50)
-	
-	if isGlossy then
+local toggleGlossy = createToggle("🌧️ Wet / Glossy World", function(state)
+	isGlossy = state
+	if state then
 		for _, part in ipairs(workspace:GetDescendants()) do
 			if part:IsA("BasePart") and not part.Parent:FindFirstChild("Humanoid") then
-				if originalReflectance[part] == nil then
-					originalReflectance[part] = part.Reflectance
-				end
+				if originalReflectance[part] == nil then originalReflectance[part] = part.Reflectance end
 				part.Reflectance = 0.15 
 			end
 		end
@@ -187,11 +221,62 @@ glossyBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
+local autoFocusActive = false
+local toggleAutofocus = createToggle("👁️ Dynamic Autofocus", function(state) autoFocusActive = state end)
+
+local cameraSwayActive = false
+local toggleSway = createToggle("🎥 Cinematic Camera Sway", function(state) cameraSwayActive = state end)
+
+-- [[ 4. DYNAMIC ENGINES (Autofocus & Sway) ]] --
+local activeConnections = {}
+
+-- Autofocus Logic
+table.insert(activeConnections, RunService.RenderStepped:Connect(function()
+	if autoFocusActive and DoF.FarIntensity > 0 then
+		local ray = Camera:ScreenPointToRay(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		if LocalPlayer.Character then rayParams.FilterDescendantsInstances = {LocalPlayer.Character} end
+		
+		local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, rayParams)
+		local targetDist = result and (Camera.CFrame.Position - result.Position).Magnitude or 1000
+		
+		-- Smooth lerp for the focus shift
+		DoF.FocusDistance = DoF.FocusDistance + (targetDist - DoF.FocusDistance) * 0.1
+	else
+		DoF.FocusDistance = 100 -- Default flat focus when off
+	end
+end))
+
+-- Camera Sway Logic
+local swayX, swayY = 0, 0
+table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
+	if cameraSwayActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+		local speed = LocalPlayer.Character.Humanoid.MoveDirection.Magnitude
+		if speed > 0 then
+			local t = tick() * 6 -- Speed of bobbing
+			swayX = math.lerp(swayX, math.cos(t * 0.5) * 0.015, 0.1)
+			swayY = math.lerp(swayY, math.sin(t) * 0.015, 0.1)
+		else
+			-- Gentle idle breathing
+			local t = tick() * 1.5
+			swayX = math.lerp(swayX, math.cos(t * 0.5) * 0.002, 0.05)
+			swayY = math.lerp(swayY, math.sin(t) * 0.002, 0.05)
+		end
+		Camera.CFrame = Camera.CFrame * CFrame.Angles(swayX, swayY, 0)
+	end
+end))
+
+-- Helper Lerp function if math.lerp doesn't exist in environment
+if not math.lerp then
+	math.lerp = function(a, b, t) return a + (b - a) * t end
+end
+
 -- [[ 5. PRESETS ]] --
-local presetContainer = Instance.new("Frame", MainFrame)
-presetContainer.Size = UDim2.new(0, 310, 0, 80); presetContainer.BackgroundTransparency = 1
+local presetContainer = Instance.new("Frame", ScrollFrame)
+presetContainer.Size = UDim2.new(0, 320, 0, 80); presetContainer.BackgroundTransparency = 1
 local pLayout = Instance.new("UIGridLayout", presetContainer)
-pLayout.CellSize = UDim2.new(0, 150, 0, 35); pLayout.CellPadding = UDim2.new(0, 10, 0, 10)
+pLayout.CellSize = UDim2.new(0, 155, 0, 35); pLayout.CellPadding = UDim2.new(0, 10, 0, 10)
 
 local function createPresetBtn(name, color, callback)
 	local btn = Instance.new("TextButton", presetContainer)
@@ -206,38 +291,38 @@ createPresetBtn("🌟 RTX Ultra", Color3.fromRGB(200, 140, 40), function()
 	Lighting.Ambient = Color3.fromRGB(30, 30, 35) 
 	Lighting.Brightness = originalLighting.Brightness * 1.5
 	CC.TintColor = Color3.fromRGB(255, 245, 235) 
-	setSat(0.4); setCon(0.3); setBloom(0.6); setRays(0.25)
-	setEnvReflections(1) 
-	Blur.Size = 0
+	setSat(0.4); setCon(0.3); setBloom(0.6); setRays(0.25); setEnv(1)
+	setFogDen(origAtmoDensity); setFogHaze(origAtmoHaze)
+	setDoF(0.3); toggleAutofocus(true); toggleSway(true); Blur.Size = 0
 end)
 
-createPresetBtn("🍭 Vibrant Pop", Color3.fromRGB(150, 50, 200), function()
-	Lighting.GlobalShadows = true
-	Lighting.Ambient = Color3.fromRGB(100, 100, 120)
-	CC.TintColor = Color3.fromRGB(255, 255, 255)
-	setSat(1.2); setCon(0.15); setBloom(0.4); setRays(0.1)
-	setEnvReflections(0.5)
-	Blur.Size = 0
+createPresetBtn("🌫️ Silent Hill", Color3.fromRGB(100, 110, 100), function()
+	Lighting.Ambient = Color3.fromRGB(50, 50, 55)
+	CC.TintColor = Color3.fromRGB(230, 240, 230)
+	setSat(-0.8); setCon(0.2); setBloom(0.2); setRays(0)
+	setFogDen(0.8); setFogHaze(5) -- Heavy thick fog
+	setDoF(0.5); toggleAutofocus(true); toggleSway(true); Blur.Size = 0
 end)
 
 createPresetBtn("🎬 Dark Cinema", Color3.fromRGB(40, 80, 150), function()
 	Lighting.Ambient = Color3.fromRGB(10, 10, 15)
 	Lighting.Brightness = originalLighting.Brightness * 0.8
 	CC.TintColor = Color3.fromRGB(210, 220, 255) 
-	setSat(-0.4); setCon(0.5); setBloom(0.8); setRays(0.1)
-	setEnvReflections(0.8)
-	Blur.Size = 3 
+	setSat(-0.4); setCon(0.5); setBloom(0.8); setRays(0.1); setEnv(0.8)
+	setFogDen(origAtmoDensity); setFogHaze(origAtmoHaze)
+	setDoF(0.6); toggleAutofocus(true); toggleSway(true); Blur.Size = 2 
 end)
 
-createPresetBtn("🔄 Reset Default", Color3.fromRGB(80, 80, 80), function()
+createPresetBtn("🔄 Reset All", Color3.fromRGB(80, 80, 80), function()
 	Lighting.Ambient = originalLighting.Ambient
 	Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
 	Lighting.Brightness = originalLighting.Brightness
 	Lighting.GlobalShadows = originalLighting.GlobalShadows
 	Lighting.ClockTime = originalLighting.ClockTime
 	CC.TintColor = Color3.fromRGB(255, 255, 255)
-	setSat(0); setCon(0); setBloom(0); setRays(0)
-	setEnvReflections(originalLighting.EnvSpec)
+	setSat(0); setCon(0); setBloom(0); setRays(0); setEnv(originalLighting.EnvSpec)
+	setFogDen(origAtmoDensity); setFogHaze(origAtmoHaze)
+	setDoF(0); toggleGlossy(false); toggleAutofocus(false); toggleSway(false)
 	Blur.Size = 0
 end)
 
@@ -251,6 +336,10 @@ UnhookBtn.MouseButton1Click:Connect(function()
 	Lighting.EnvironmentSpecularScale = originalLighting.EnvSpec
 	Lighting.EnvironmentDiffuseScale = originalLighting.EnvDiff
 	
+	if createdAtmo and Atmo then Atmo:Destroy() else
+		Atmo.Density = origAtmoDensity; Atmo.Haze = origAtmoHaze
+	end
+	
 	for part, oldRef in pairs(originalReflectance) do
 		if part and part.Parent then part.Reflectance = oldRef end
 	end
@@ -259,5 +348,6 @@ UnhookBtn.MouseButton1Click:Connect(function()
 		if string.find(v.Name, "UR_") then v:Destroy() end
 	end
 	
+	for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
 	ScreenGui:Destroy()
 end)
