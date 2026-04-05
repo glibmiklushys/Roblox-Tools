@@ -1,0 +1,263 @@
+-- [[ ULTIMATE RESHADE ENGINE v4.5 (Fixed Sliders) ]] --
+-- Forces advanced lighting, post-processing, and cinematic reflections.
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- [[ 1. LIGHTING BACKUP & SETUP ]] --
+local originalLighting = {
+	Ambient = Lighting.Ambient,
+	OutdoorAmbient = Lighting.OutdoorAmbient,
+	Brightness = Lighting.Brightness,
+	GlobalShadows = Lighting.GlobalShadows,
+	ClockTime = Lighting.ClockTime,
+	EnvSpec = Lighting.EnvironmentSpecularScale,
+	EnvDiff = Lighting.EnvironmentDiffuseScale
+}
+
+local originalReflectance = {}
+
+-- Clean up any old effects from previous script versions
+local oldFolder = Lighting:FindFirstChild("UltimateReShadeFX")
+if oldFolder then oldFolder:Destroy() end
+for _, v in ipairs(Lighting:GetChildren()) do
+	if string.find(v.Name, "UR_") then v:Destroy() end
+end
+
+-- Create new effects DIRECTLY in Lighting so Roblox actually renders them
+local CC = Instance.new("ColorCorrectionEffect", Lighting); CC.Name = "UR_CC"
+local Bloom = Instance.new("BloomEffect", Lighting); Bloom.Name = "UR_Bloom"
+local SunRays = Instance.new("SunRaysEffect", Lighting); SunRays.Name = "UR_SunRays"
+local Blur = Instance.new("BlurEffect", Lighting); Blur.Name = "UR_Blur"; Blur.Size = 0 
+
+-- [[ 2. UI FRAMEWORK ]] --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ReShadeUI"
+ScreenGui.ResetOnSpawn = false
+pcall(function() ScreenGui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 350, 0, 520) 
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -260)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+TitleBar.Parent = MainFrame
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -50, 1, 0); TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.BackgroundTransparency = 1; TitleLabel.Text = "Ultimate ReShade v4.5"
+TitleLabel.TextColor3 = Color3.new(1,1,1); TitleLabel.Font = Enum.Font.GothamBold; TitleLabel.TextSize = 13
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left; TitleLabel.Parent = TitleBar
+
+local UnhookBtn = Instance.new("TextButton")
+UnhookBtn.Size = UDim2.new(0, 25, 0, 25); UnhookBtn.Position = UDim2.new(1, -30, 0, 5)
+UnhookBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50); UnhookBtn.Text = "X"
+UnhookBtn.TextColor3 = Color3.new(1,1,1); UnhookBtn.Font = Enum.Font.GothamBold; UnhookBtn.Parent = TitleBar
+Instance.new("UICorner", UnhookBtn).CornerRadius = UDim.new(0, 5)
+
+local dragging, dragInput, dragStart, startPos
+TitleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+		input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+	end
+end)
+TitleBar.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+local ContentLayout = Instance.new("UIListLayout", MainFrame)
+ContentLayout.Padding = UDim.new(0, 8)
+ContentLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local spacer = Instance.new("Frame", MainFrame)
+spacer.Size = UDim2.new(1, 0, 0, 35); spacer.BackgroundTransparency = 1
+
+-- [[ 3. SLIDER LOGIC ]] --
+local function createSlider(name, min, max, default, callback)
+	local container = Instance.new("Frame", MainFrame)
+	container.Size = UDim2.new(0, 310, 0, 45); container.BackgroundTransparency = 1
+	
+	local lbl = Instance.new("TextLabel", container)
+	lbl.Size = UDim2.new(1, 0, 0, 15); lbl.BackgroundTransparency = 1
+	lbl.Text = name .. ": " .. tostring(default); lbl.TextColor3 = Color3.new(1,1,1)
+	lbl.Font = Enum.Font.Gotham; lbl.TextSize = 12; lbl.TextXAlignment = Enum.TextXAlignment.Left
+	
+	local bg = Instance.new("TextButton", container)
+	bg.Size = UDim2.new(1, 0, 0, 15); bg.Position = UDim2.new(0, 0, 0, 20)
+	bg.BackgroundColor3 = Color3.fromRGB(40, 40, 45); bg.Text = ""; bg.AutoButtonColor = false
+	Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 5)
+	
+	local fill = Instance.new("Frame", bg)
+	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(60, 120, 220); fill.BorderSizePixel = 0
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 5)
+	
+	local function updateSlider(input)
+		local percent = math.clamp((input.Position.X - bg.AbsolutePosition.X) / bg.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+		local val = min + (max - min) * percent
+		val = math.floor(val * 100) / 100 
+		lbl.Text = name .. ": " .. tostring(val)
+		callback(val)
+	end
+	
+	local sliding = false
+	bg.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then sliding = true; updateSlider(input) end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then updateSlider(input) end
+	end)
+	
+	callback(default)
+	return function(val) 
+		local percent = math.clamp((val - min) / (max - min), 0, 1)
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+		lbl.Text = name .. ": " .. tostring(math.floor(val * 100) / 100)
+		callback(val)
+	end
+end
+
+local setSat = createSlider("Saturation", -1, 2, 0, function(val) CC.Saturation = val end)
+local setCon = createSlider("Contrast", -1, 2, 0, function(val) CC.Contrast = val end)
+local setBloom = createSlider("Bloom Intensity", 0, 2, 0, function(val) Bloom.Intensity = val end)
+local setRays = createSlider("SunRays Intensity", 0, 0.5, 0, function(val) SunRays.Intensity = val end)
+local setEnvReflections = createSlider("PBR Reflections (Env Scale)", 0, 1, originalLighting.EnvSpec, function(val) 
+	Lighting.EnvironmentSpecularScale = val
+	Lighting.EnvironmentDiffuseScale = val
+end)
+
+-- [[ 4. GLOSSY WORLD TOGGLE ]] --
+local toggleContainer = Instance.new("Frame", MainFrame)
+toggleContainer.Size = UDim2.new(0, 310, 0, 35); toggleContainer.BackgroundTransparency = 1
+
+local glossyBtn = Instance.new("TextButton", toggleContainer)
+glossyBtn.Size = UDim2.new(1, 0, 1, 0)
+glossyBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+glossyBtn.Text = "🌧️ Wet / Glossy World: OFF"
+glossyBtn.TextColor3 = Color3.new(1,1,1)
+glossyBtn.Font = Enum.Font.GothamSemibold; glossyBtn.TextSize = 13
+Instance.new("UICorner", glossyBtn).CornerRadius = UDim.new(0, 5)
+
+local isGlossy = false
+glossyBtn.MouseButton1Click:Connect(function()
+	isGlossy = not isGlossy
+	glossyBtn.Text = "🌧️ Wet / Glossy World: " .. (isGlossy and "ON" or "OFF")
+	glossyBtn.BackgroundColor3 = isGlossy and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(45, 45, 50)
+	
+	if isGlossy then
+		for _, part in ipairs(workspace:GetDescendants()) do
+			if part:IsA("BasePart") and not part.Parent:FindFirstChild("Humanoid") then
+				if originalReflectance[part] == nil then
+					originalReflectance[part] = part.Reflectance
+				end
+				part.Reflectance = 0.15 
+			end
+		end
+	else
+		for part, oldRef in pairs(originalReflectance) do
+			if part and part.Parent then part.Reflectance = oldRef end
+		end
+		originalReflectance = {}
+	end
+end)
+
+-- [[ 5. PRESETS ]] --
+local presetContainer = Instance.new("Frame", MainFrame)
+presetContainer.Size = UDim2.new(0, 310, 0, 80); presetContainer.BackgroundTransparency = 1
+local pLayout = Instance.new("UIGridLayout", presetContainer)
+pLayout.CellSize = UDim2.new(0, 150, 0, 35); pLayout.CellPadding = UDim2.new(0, 10, 0, 10)
+
+local function createPresetBtn(name, color, callback)
+	local btn = Instance.new("TextButton", presetContainer)
+	btn.BackgroundColor3 = color; btn.Text = name; btn.TextColor3 = Color3.new(1,1,1)
+	btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 13
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+	btn.MouseButton1Click:Connect(callback)
+end
+
+createPresetBtn("🌟 RTX Ultra", Color3.fromRGB(200, 140, 40), function()
+	Lighting.GlobalShadows = true
+	Lighting.Ambient = Color3.fromRGB(30, 30, 35) 
+	Lighting.Brightness = originalLighting.Brightness * 1.5
+	CC.TintColor = Color3.fromRGB(255, 245, 235) 
+	setSat(0.4); setCon(0.3); setBloom(0.6); setRays(0.25)
+	setEnvReflections(1) 
+	Blur.Size = 0
+end)
+
+createPresetBtn("🍭 Vibrant Pop", Color3.fromRGB(150, 50, 200), function()
+	Lighting.GlobalShadows = true
+	Lighting.Ambient = Color3.fromRGB(100, 100, 120)
+	CC.TintColor = Color3.fromRGB(255, 255, 255)
+	setSat(1.2); setCon(0.15); setBloom(0.4); setRays(0.1)
+	setEnvReflections(0.5)
+	Blur.Size = 0
+end)
+
+createPresetBtn("🎬 Dark Cinema", Color3.fromRGB(40, 80, 150), function()
+	Lighting.Ambient = Color3.fromRGB(10, 10, 15)
+	Lighting.Brightness = originalLighting.Brightness * 0.8
+	CC.TintColor = Color3.fromRGB(210, 220, 255) 
+	setSat(-0.4); setCon(0.5); setBloom(0.8); setRays(0.1)
+	setEnvReflections(0.8)
+	Blur.Size = 3 
+end)
+
+createPresetBtn("🔄 Reset Default", Color3.fromRGB(80, 80, 80), function()
+	Lighting.Ambient = originalLighting.Ambient
+	Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+	Lighting.Brightness = originalLighting.Brightness
+	Lighting.GlobalShadows = originalLighting.GlobalShadows
+	Lighting.ClockTime = originalLighting.ClockTime
+	CC.TintColor = Color3.fromRGB(255, 255, 255)
+	setSat(0); setCon(0); setBloom(0); setRays(0)
+	setEnvReflections(originalLighting.EnvSpec)
+	Blur.Size = 0
+end)
+
+-- [[ 6. UNHOOK LOGIC ]] --
+UnhookBtn.MouseButton1Click:Connect(function()
+	Lighting.Ambient = originalLighting.Ambient
+	Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+	Lighting.Brightness = originalLighting.Brightness
+	Lighting.GlobalShadows = originalLighting.GlobalShadows
+	Lighting.ClockTime = originalLighting.ClockTime
+	Lighting.EnvironmentSpecularScale = originalLighting.EnvSpec
+	Lighting.EnvironmentDiffuseScale = originalLighting.EnvDiff
+	
+	for part, oldRef in pairs(originalReflectance) do
+		if part and part.Parent then part.Reflectance = oldRef end
+	end
+	
+	for _, v in ipairs(Lighting:GetChildren()) do
+		if string.find(v.Name, "UR_") then v:Destroy() end
+	end
+	
+	ScreenGui:Destroy()
+end)
