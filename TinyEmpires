@@ -1,0 +1,208 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Player = Players.LocalPlayer
+
+-- // Configuration
+local UIState = { Active = false, Unhooked = false }
+
+-- // Clean up existing UI
+local OldUI = Player:WaitForChild("PlayerGui"):FindFirstChild("TinyEmpireUI")
+if OldUI then OldUI:Destroy() end
+
+-- // Create UI Instance
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TinyEmpireUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+
+-- // Main Frame
+local Main = Instance.new("Frame")
+Main.Name = "MainFrame"
+Main.Size = UDim2.new(0, 300, 0, 340)
+Main.Position = UDim2.new(0.5, -150, 0.4, -170)
+Main.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = Main
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Thickness = 2
+MainStroke.Color = Color3.fromRGB(0, 255, 127)
+MainStroke.Parent = Main
+
+-- // Header Bar
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, 40)
+Header.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+Header.BorderSizePixel = 0
+Header.Parent = Main
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 10)
+HeaderCorner.Parent = Header
+
+local BottomSquare = Instance.new("Frame")
+BottomSquare.Size = UDim2.new(1, 0, 0, 10)
+BottomSquare.Position = UDim2.new(0, 0, 1, -10)
+BottomSquare.BackgroundColor3 = Header.BackgroundColor3
+BottomSquare.BorderSizePixel = 0
+BottomSquare.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "TINY EMPIRES"
+Title.TextColor3 = Color3.fromRGB(0, 255, 127)
+Title.Font = Enum.Font.Arcade
+Title.TextSize = 20
+Title.Parent = Header
+
+-- // IMPROVED DRAGGABLE LOGIC (Moves Main when Header is dragged)
+local function MakeDraggable(clickObject, dragObject)
+    local dragging, dragInput, dragStart, startPos
+    clickObject.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = dragObject.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    clickObject.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            dragObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+-- Click on Header -> Drag the Main frame
+MakeDraggable(Header, Main)
+
+-- // Buttons Container
+local Container = Instance.new("Frame")
+Container.Size = UDim2.new(1, 0, 1, -40)
+Container.Position = UDim2.new(0, 0, 0, 40)
+Container.BackgroundTransparency = 1
+Container.Parent = Main
+
+local List = Instance.new("UIListLayout")
+List.Parent = Container
+List.HorizontalAlignment = Enum.HorizontalAlignment.Center
+List.Padding = UDim.new(0, 10)
+List.SortOrder = Enum.SortOrder.LayoutOrder
+
+local Padding = Instance.new("UIPadding")
+Padding.Parent = Container
+Padding.PaddingTop = UDim.new(0, 15)
+
+-- // Button Helper
+local function CreateButton(text, color, order)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 260, 0, 38)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Arcade
+    btn.TextSize = 14
+    btn.LayoutOrder = order
+    btn.Parent = Container
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    return btn
+end
+
+local ToggleBtn = CreateButton("AUTO-COLLECT: OFF", Color3.fromRGB(40, 40, 50), 1)
+local ShopBtn = CreateButton("OPEN SHOP", Color3.fromRGB(0, 120, 215), 2)
+local SellCropsBtn = CreateButton("SELL CROPS", Color3.fromRGB(200, 150, 0), 3)
+local SellBuildingsBtn = CreateButton("SELL BUILDINGS", Color3.fromRGB(180, 50, 50), 4)
+local UnhookBtn = CreateButton("[ UNHOOK SCRIPT ]", Color3.fromRGB(15, 15, 20), 5)
+UnhookBtn.BackgroundTransparency = 1
+UnhookBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+
+-- // Auto_collect Logic (8+ Analysis)
+local function Auto_collect()
+    while UIState.Active and not UIState.Unhooked do
+        local myDisplayName = Player.DisplayName
+        local plots = Workspace:FindFirstChild("Plots")
+        if plots then
+            local myPlot = nil
+            for _, plot in pairs(plots:GetChildren()) do
+                local nameLabel = plot:FindFirstChild("EmpireName", true) or plot:FindFirstChild("PlotOwnerLabel", true)
+                if nameLabel and string.find(nameLabel.Text, myDisplayName) then
+                    myPlot = plot
+                    break
+                end
+            end
+
+            if myPlot and myPlot:FindFirstChild("Buildings") then
+                for _, building in pairs(myPlot.Buildings:GetChildren()) do
+                    if not UIState.Active then break end
+                    local prompt = building:FindFirstChild("CollectPrompt", true)
+                    if prompt and prompt:IsA("ProximityPrompt") then
+                        local amount = tonumber(string.match(prompt.ObjectText, "%d+")) or 0
+                        if amount >= 8 then
+                            local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+                            local targetPart = prompt.Parent or building:FindFirstChild("Floor") or building.PrimaryPart
+                            if root and targetPart then
+                                root.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+                                task.wait(0.05)
+                                if fireproximityprompt then fireproximityprompt(prompt)
+                                else
+                                    prompt:InputHoldBegin()
+                                    task.wait(0.1)
+                                    prompt:InputHoldEnd()
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end
+
+-- // Logic: Connections
+ToggleBtn.MouseButton1Click:Connect(function()
+    UIState.Active = not UIState.Active
+    ToggleBtn.Text = UIState.Active and "AUTO-COLLECT: ON" or "AUTO-COLLECT: OFF"
+    ToggleBtn.TextColor3 = UIState.Active and Color3.fromRGB(0, 255, 127) or Color3.new(1, 1, 1)
+    if UIState.Active then task.spawn(Auto_collect) end
+end)
+
+ShopBtn.MouseButton1Click:Connect(function()
+    local targetPlayer = Players:FindFirstChild("KotikSantu")
+    if targetPlayer and targetPlayer:FindFirstChild("PlayerGui") then
+        local mainUI = targetPlayer.PlayerGui:FindFirstChild("MainUI")
+        if mainUI and mainUI:FindFirstChild("Shop") then
+            mainUI.Shop.Visible = true
+        end
+    end
+end)
+
+SellCropsBtn.MouseButton1Click:Connect(function()
+    local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("SellAllCrops")
+    if remote then remote:InvokeServer() end
+end)
+
+SellBuildingsBtn.MouseButton1Click:Connect(function()
+    local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("SellAllBuildings")
+    if remote then remote:InvokeServer() end
+end)
+
+UnhookBtn.MouseButton1Click:Connect(function()
+    UIState.Unhooked = true
+    UIState.Active = false
+    ScreenGui:Destroy()
+end)
