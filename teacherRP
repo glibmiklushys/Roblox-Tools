@@ -397,15 +397,13 @@ end)
 -- ==========================================
 -- 3. Players Tab Setup
 -- ==========================================
-local playerListFrame = Instance.new("Frame", tabs.Players)
-playerListFrame.Size = UDim2.new(0.95, 0, 0, 400)
-playerListFrame.BackgroundTransparency = 1
-local plLayout = Instance.new("UIListLayout", playerListFrame)
-plLayout.Padding = UDim.new(0, 5)
 
 local function refreshPlayerTabs()
-    for _, child in pairs(playerListFrame:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
+    -- Clear existing player rows (skipping UIListLayout and UIPadding)
+    for _, child in pairs(tabs.Players:GetChildren()) do
+        if child:IsA("Frame") then 
+            child:Destroy() 
+        end
     end
     
     local plist = Players:GetPlayers()
@@ -418,8 +416,9 @@ local function refreshPlayerTabs()
     
     for _, target in pairs(plist) do
         if target ~= player then
-            local row = Instance.new("Frame", playerListFrame)
-            row.Size = UDim2.new(1, 0, 0, 40)
+            -- Parent directly to the ScrollingFrame instead of a fixed-size frame
+            local row = Instance.new("Frame", tabs.Players)
+            row.Size = UDim2.new(0.9, 0, 0, 40)
             row.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
             local cornerRow = Instance.new("UICorner", row)
             cornerRow.CornerRadius = UDim.new(0, 6)
@@ -468,6 +467,16 @@ local function refreshPlayerTabs()
             end)
         end
     end
+    
+    -- Dynamically update the ScrollingFrame's CanvasSize with extra space at the bottom
+    task.spawn(function()
+        task.wait() -- Wait a brief tick for UIListLayout to calculate AbsoluteContentSize
+        local layout = tabs.Players:FindFirstChildWhichIsA("UIListLayout")
+        if layout then
+            -- Sets the scrollable area to the exact height of all players + 100 pixels of extra empty space
+            tabs.Players.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 100)
+        end
+    end)
 end
 
 table.insert(connections, Players.PlayerAdded:Connect(function() refreshVisuals(); refreshPlayerTabs() end))
