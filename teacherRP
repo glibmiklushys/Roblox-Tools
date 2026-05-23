@@ -237,7 +237,30 @@ local infJumpToggle = createUIElement("Toggle", "Infinity Jump", tabs.Main)
 
 local patrolToggle = createUIElement("Toggle", "Patrol", tabs.Main)
 local addPatrolBtn = createUIElement("Button", "Add Patrol Point Here", tabs.Main)
+-- Add this under your addPatrolBtn definition
+local clearPatrolBtn = createUIElement("Button", "Clear Patrol Points", tabs.Main)
+clearPatrolBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Red color for danger/reset
 
+-- Add this logic to handle the clearing
+clearPatrolBtn.MouseButton1Click:Connect(function()
+    patrolPoints = {} -- Reset the list
+    patrolIndex = 1   -- Reset the index
+    isPatrolOn = false -- Stop the patrol if it was running
+    
+    -- Update the visual state
+    updateToggleVisual(patrolToggle, isPatrolOn, "Patrol")
+    addPatrolBtn.Text = "Add Patrol Point Here"
+    
+    -- Provide feedback
+    clearPatrolBtn.Text = "Points Cleared!"
+    task.wait(1)
+    clearPatrolBtn.Text = "Clear Patrol Points"
+    
+    -- If player is currently moving via patrol, stop them
+    if player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid:MoveTo(player.Character.HumanoidRootPart.Position)
+    end
+end)
 -- ==========================================
 -- Core Logic & Feature Loops
 -- ==========================================
