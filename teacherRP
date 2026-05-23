@@ -1,0 +1,581 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local camera = workspace.CurrentCamera
+
+-- Store all connections and instances for the Unhook feature
+local connections = {}
+local espInstances = {}
+local nametagInstances = {}
+local savedTPs = {}
+local patrolPoints = {}
+local favoritePlayers = {}
+
+-- Feature States
+local isESPOn = false
+local isNametagsOn = false
+
+-- COLOR CYCLE LOGIC
+local popularColors = {
+    {Name = "Red", Color = Color3.fromRGB(255, 0, 0)},
+    {Name = "Green", Color = Color3.fromRGB(0, 255, 0)},
+    {Name = "Blue", Color = Color3.fromRGB(0, 0, 255)},
+    {Name = "Cyan", Color = Color3.fromRGB(0, 255, 255)},
+    {Name = "Magenta", Color = Color3.fromRGB(255, 0, 255)},
+    {Name = "Yellow", Color = Color3.fromRGB(255, 255, 0)},
+    {Name = "White", Color = Color3.fromRGB(255, 255, 255)},
+    {Name = "Black", Color = Color3.fromRGB(0, 0, 0)}
+}
+local colorIndex = 1
+local currentESPColor = popularColors[colorIndex].Color
+
+local isSpeedOn = false
+local isFlyOn = false
+local flyCtrl = {f = 0, b = 0, l = 0, r = 0}
+local lastCtrl = {f = 0, b = 0, l = 0, r = 0}
+
+local isPatrolOn = false
+local patrolIndex = 1
+
+local isNoclipOn = false
+local isCtrlClickOn = false
+local isInfJumpOn = false
+
+-- ==========================================
+-- UI Setup (Modern Dark Theme)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RPAdminGui"
+ScreenGui.ResetOnSpawn = false
+local success = pcall(function() ScreenGui.Parent = CoreGui end)
+if not success then ScreenGui.Parent = player:WaitForChild("PlayerGui") end
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 400, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local cornerMain = Instance.new("UICorner", MainFrame)
+cornerMain.CornerRadius = UDim.new(0, 10)
+
+local TitleBar = Instance.new("TextLabel", MainFrame)
+TitleBar.Size = UDim2.new(1, -60, 0, 40)
+TitleBar.BackgroundTransparency = 1
+TitleBar.Text = "  Advanced RP Control Panel"
+TitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleBar.TextXAlignment = Enum.TextXAlignment.Left
+TitleBar.Font = Enum.Font.GothamBold
+TitleBar.TextSize = 18
+
+local UnhookBtn = Instance.new("TextButton", MainFrame)
+UnhookBtn.Size = UDim2.new(0, 60, 0, 30)
+UnhookBtn.Position = UDim2.new(1, -65, 0, 5)
+UnhookBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+UnhookBtn.Text = "UNHOOK"
+UnhookBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+UnhookBtn.Font = Enum.Font.GothamBold
+UnhookBtn.TextSize = 12
+local cornerUnhook = Instance.new("UICorner", UnhookBtn)
+cornerUnhook.CornerRadius = UDim.new(0, 6)
+
+local TabContainer = Instance.new("Frame", MainFrame)
+TabContainer.Size = UDim2.new(1, 0, 1, -80)
+TabContainer.Position = UDim2.new(0, 0, 0, 80)
+TabContainer.BackgroundTransparency = 1
+
+local function createTabButton(text, posOffset, parent)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0.33, -5, 0, 35)
+    btn.Position = UDim2.new(posOffset, 2, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 14
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 6)
+    return btn
+end
+
+local tabBtns = {
+    Main = createTabButton("Main Features", 0, MainFrame),
+    Points = createTabButton("Teleport Points", 0.333, MainFrame),
+    Players = createTabButton("Player List", 0.666, MainFrame)
+}
+
+local tabs = {
+    Main = Instance.new("ScrollingFrame", TabContainer),
+    Points = Instance.new("ScrollingFrame", TabContainer),
+    Players = Instance.new("ScrollingFrame", TabContainer)
+}
+
+for _, tab in pairs(tabs) do
+    tab.Size = UDim2.new(1, 0, 1, 0)
+    tab.BackgroundTransparency = 1
+    tab.ScrollBarThickness = 4
+    tab.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 105)
+    tab.Visible = false
+    local layout = Instance.new("UIListLayout", tab)
+    layout.Padding = UDim.new(0, 8)
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local padding = Instance.new("UIPadding", tab)
+    padding.PaddingTop = UDim.new(0, 10)
+end
+tabs.Main.Visible = true
+
+for name, btn in pairs(tabBtns) do
+    btn.MouseButton1Click:Connect(function()
+        for tName, tab in pairs(tabs) do tab.Visible = (tName == name) end
+        for bName, b in pairs(tabBtns) do b.BackgroundColor3 = Color3.fromRGB(45, 45, 50) end
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+    end)
+end
+tabBtns.Main.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+
+local function createUIElement(type, text, parent, width)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(width or 0.9, 0, 0, 40)
+    frame.BackgroundTransparency = 1
+    
+    if type == "Toggle" then
+        local btn = Instance.new("TextButton", frame)
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+        btn.Text = "  " .. text .. ": OFF"
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextSize = 14
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        local corner = Instance.new("UICorner", btn)
+        corner.CornerRadius = UDim.new(0, 6)
+        return btn
+    elseif type == "Input" then
+        local label = Instance.new("TextLabel", frame)
+        label.Size = UDim2.new(0.5, -5, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(200, 200, 205)
+        label.Font = Enum.Font.GothamSemibold
+        label.TextSize = 14
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local box = Instance.new("TextBox", frame)
+        box.Size = UDim2.new(0.5, 0, 1, 0)
+        box.Position = UDim2.new(0.5, 0, 0, 0)
+        box.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+        box.TextColor3 = Color3.fromRGB(255, 255, 255)
+        box.Text = ""
+        box.Font = Enum.Font.Gotham
+        box.TextSize = 14
+        local corner = Instance.new("UICorner", box)
+        corner.CornerRadius = UDim.new(0, 6)
+        return box
+    elseif type == "Button" then
+        local btn = Instance.new("TextButton", frame)
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 14
+        local corner = Instance.new("UICorner", btn)
+        corner.CornerRadius = UDim.new(0, 6)
+        return btn
+    end
+end
+
+-- ==========================================
+-- 1. Main Tab Features
+-- ==========================================
+local espToggle = createUIElement("Toggle", "ESP", tabs.Main)
+local nametagToggle = createUIElement("Toggle", "Nametags", tabs.Main)
+
+local colorCycleFrame = Instance.new("Frame", tabs.Main)
+colorCycleFrame.Size = UDim2.new(0.9, 0, 0, 40)
+colorCycleFrame.BackgroundTransparency = 1
+
+local cycleLabel = Instance.new("TextLabel", colorCycleFrame)
+cycleLabel.Size = UDim2.new(0.5, -5, 1, 0)
+cycleLabel.BackgroundTransparency = 1
+cycleLabel.Text = "Visuals Color:"
+cycleLabel.TextColor3 = Color3.fromRGB(200, 200, 205)
+cycleLabel.Font = Enum.Font.GothamSemibold
+cycleLabel.TextSize = 14
+cycleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local colorCycleBtn = Instance.new("TextButton", colorCycleFrame)
+colorCycleBtn.Size = UDim2.new(0.5, 0, 1, 0)
+colorCycleBtn.Position = UDim2.new(0.5, 0, 0, 0)
+colorCycleBtn.BackgroundColor3 = currentESPColor
+colorCycleBtn.Text = popularColors[colorIndex].Name
+colorCycleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+if currentESPColor == Color3.fromRGB(255,255,255) or currentESPColor == Color3.fromRGB(255,255,0) then
+    colorCycleBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+end
+colorCycleBtn.Font = Enum.Font.GothamBold
+colorCycleBtn.TextSize = 14
+local cornerCycle = Instance.new("UICorner", colorCycleBtn)
+cornerCycle.CornerRadius = UDim.new(0, 6)
+
+local speedToggle = createUIElement("Toggle", "WalkSpeed", tabs.Main)
+local speedInput = createUIElement("Input", "Speed Value:", tabs.Main)
+speedInput.Text = "50"
+
+local flyToggle = createUIElement("Toggle", "Fly", tabs.Main)
+local flyInput = createUIElement("Input", "Fly Speed:", tabs.Main)
+flyInput.Text = "50"
+
+local noclipToggle = createUIElement("Toggle", "Noclip", tabs.Main)
+local ctrlClickToggle = createUIElement("Toggle", "Ctrl+Click TP", tabs.Main)
+local infJumpToggle = createUIElement("Toggle", "Infinity Jump", tabs.Main)
+
+local patrolToggle = createUIElement("Toggle", "Patrol", tabs.Main)
+local addPatrolBtn = createUIElement("Button", "Add Patrol Point Here", tabs.Main)
+
+-- ==========================================
+-- Core Logic & Feature Loops
+-- ==========================================
+
+local function updateToggleVisual(btn, state, name)
+    btn.Text = "  " .. name .. ": " .. (state and "ON" or "OFF")
+    btn.BackgroundColor3 = state and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(60, 60, 65)
+end
+
+local function refreshVisuals()
+    for _, inst in pairs(espInstances) do inst:Destroy() end
+    for _, inst in pairs(nametagInstances) do inst:Destroy() end
+    table.clear(espInstances)
+    table.clear(nametagInstances)
+
+    if not isESPOn and not isNametagsOn then return end
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            if isESPOn then
+                local hl = Instance.new("Highlight")
+                hl.Adornee = p.Character
+                hl.FillColor = currentESPColor
+                hl.FillTransparency = 0.5
+                hl.OutlineColor = currentESPColor
+                hl.OutlineTransparency = 0
+                hl.Parent = CoreGui
+                table.insert(espInstances, hl)
+            end
+            if isNametagsOn and p.Character:FindFirstChild("Head") then
+                local bg = Instance.new("BillboardGui")
+                bg.Adornee = p.Character.Head
+                bg.Size = UDim2.new(0, 100, 0, 40)
+                bg.StudsOffset = Vector3.new(0, 3, 0)
+                bg.AlwaysOnTop = true
+                
+                local label = Instance.new("TextLabel", bg)
+                label.Size = UDim2.new(1, 0, 1, 0)
+                label.BackgroundTransparency = 1
+                label.Text = p.Name
+                label.TextColor3 = currentESPColor
+                label.TextStrokeTransparency = 0
+                label.Font = Enum.Font.GothamBold
+                label.TextSize = 14
+                
+                bg.Parent = CoreGui
+                table.insert(nametagInstances, bg)
+            end
+        end
+    end
+end
+
+colorCycleBtn.MouseButton1Click:Connect(function()
+    colorIndex = colorIndex + 1
+    if colorIndex > #popularColors then colorIndex = 1 end
+    
+    local newColorData = popularColors[colorIndex]
+    currentESPColor = newColorData.Color
+    
+    colorCycleBtn.BackgroundColor3 = currentESPColor
+    colorCycleBtn.Text = newColorData.Name
+    
+    if currentESPColor == Color3.fromRGB(255,255,255) or currentESPColor == Color3.fromRGB(255,255,0) or currentESPColor == Color3.fromRGB(0, 255, 255) then
+        colorCycleBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+    else
+        colorCycleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+    
+    refreshVisuals()
+end)
+
+espToggle.MouseButton1Click:Connect(function() isESPOn = not isESPOn; updateToggleVisual(espToggle, isESPOn, "ESP"); refreshVisuals() end)
+nametagToggle.MouseButton1Click:Connect(function() isNametagsOn = not isNametagsOn; updateToggleVisual(nametagToggle, isNametagsOn, "Nametags"); refreshVisuals() end)
+noclipToggle.MouseButton1Click:Connect(function() isNoclipOn = not isNoclipOn; updateToggleVisual(noclipToggle, isNoclipOn, "Noclip") end)
+ctrlClickToggle.MouseButton1Click:Connect(function() isCtrlClickOn = not isCtrlClickOn; updateToggleVisual(ctrlClickToggle, isCtrlClickOn, "Ctrl+Click TP") end)
+infJumpToggle.MouseButton1Click:Connect(function() isInfJumpOn = not isInfJumpOn; updateToggleVisual(infJumpToggle, isInfJumpOn, "Infinity Jump") end)
+
+speedToggle.MouseButton1Click:Connect(function()
+    isSpeedOn = not isSpeedOn
+    updateToggleVisual(speedToggle, isSpeedOn, "WalkSpeed")
+    if not isSpeedOn and player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid.WalkSpeed = 16
+    end
+end)
+
+flyToggle.MouseButton1Click:Connect(function()
+    isFlyOn = not isFlyOn
+    updateToggleVisual(flyToggle, isFlyOn, "Fly")
+    if not isFlyOn and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        workspace.Gravity = 196.2
+    end
+end)
+
+addPatrolBtn.MouseButton1Click:Connect(function()
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        table.insert(patrolPoints, player.Character.HumanoidRootPart.CFrame)
+        addPatrolBtn.Text = "Added Point (" .. #patrolPoints .. ")"
+        task.wait(1)
+        addPatrolBtn.Text = "Add Patrol Point Here"
+    end
+end)
+
+patrolToggle.MouseButton1Click:Connect(function()
+    if #patrolPoints == 0 then return end
+    isPatrolOn = not isPatrolOn
+    updateToggleVisual(patrolToggle, isPatrolOn, "Patrol")
+    
+    -- Stop walking immediately if turned off
+    if not isPatrolOn and player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid:MoveTo(player.Character.HumanoidRootPart.Position)
+    end
+end)
+
+-- ==========================================
+-- 2. Points (Teleport) Tab Setup
+-- ==========================================
+local tpNameInput = createUIElement("Input", "Point Name:", tabs.Points)
+local addTpBtn = createUIElement("Button", "Save Current Location", tabs.Points)
+local tpListFrame = Instance.new("Frame", tabs.Points)
+tpListFrame.Size = UDim2.new(0.9, 0, 0, 300)
+tpListFrame.BackgroundTransparency = 1
+local tpListLayout = Instance.new("UIListLayout", tpListFrame)
+tpListLayout.Padding = UDim.new(0, 5)
+
+local function refreshTPList()
+    for _, child in pairs(tpListFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    for name, cframe in pairs(savedTPs) do
+        local btn = Instance.new("TextButton", tpListFrame)
+        btn.Size = UDim2.new(1, 0, 0, 35)
+        btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+        btn.Text = "  TP to: " .. name
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextSize = 14
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        local corner = Instance.new("UICorner", btn)
+        corner.CornerRadius = UDim.new(0, 6)
+        
+        btn.MouseButton1Click:Connect(function()
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                player.Character.HumanoidRootPart.CFrame = cframe
+            end
+        end)
+    end
+end
+
+addTpBtn.MouseButton1Click:Connect(function()
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and tpNameInput.Text ~= "" then
+        savedTPs[tpNameInput.Text] = player.Character.HumanoidRootPart.CFrame
+        tpNameInput.Text = ""
+        refreshTPList()
+    end
+end)
+
+-- ==========================================
+-- 3. Players Tab Setup
+-- ==========================================
+local playerListFrame = Instance.new("Frame", tabs.Players)
+playerListFrame.Size = UDim2.new(0.95, 0, 0, 400)
+playerListFrame.BackgroundTransparency = 1
+local plLayout = Instance.new("UIListLayout", playerListFrame)
+plLayout.Padding = UDim.new(0, 5)
+
+local function refreshPlayerTabs()
+    for _, child in pairs(playerListFrame:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    
+    local plist = Players:GetPlayers()
+    table.sort(plist, function(a, b)
+        local aFav = favoritePlayers[a.Name] and 1 or 0
+        local bFav = favoritePlayers[b.Name] and 1 or 0
+        if aFav ~= bFav then return aFav > bFav end
+        return a.Name:lower() < b.Name:lower()
+    end)
+    
+    for _, target in pairs(plist) do
+        if target ~= player then
+            local row = Instance.new("Frame", playerListFrame)
+            row.Size = UDim2.new(1, 0, 0, 40)
+            row.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+            local cornerRow = Instance.new("UICorner", row)
+            cornerRow.CornerRadius = UDim.new(0, 6)
+            
+            local nameLabel = Instance.new("TextLabel", row)
+            nameLabel.Size = UDim2.new(0.5, -10, 1, 0)
+            nameLabel.Position = UDim2.new(0, 10, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = (favoritePlayers[target.Name] and "⭐ " or "") .. target.Name
+            nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            nameLabel.Font = Enum.Font.GothamSemibold
+            nameLabel.TextSize = 14
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            
+            local tpBtn = Instance.new("TextButton", row)
+            tpBtn.Size = UDim2.new(0.25, -5, 0, 30)
+            tpBtn.Position = UDim2.new(0.5, 0, 0.5, -15)
+            tpBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+            tpBtn.Text = "TP Behind"
+            tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tpBtn.Font = Enum.Font.GothamBold
+            tpBtn.TextSize = 12
+            local cornerTp = Instance.new("UICorner", tpBtn)
+            cornerTp.CornerRadius = UDim.new(0, 4)
+            
+            tpBtn.MouseButton1Click:Connect(function()
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 3)
+                end
+            end)
+            
+            local favBtn = Instance.new("TextButton", row)
+            favBtn.Size = UDim2.new(0.25, -10, 0, 30)
+            favBtn.Position = UDim2.new(0.75, 5, 0.5, -15)
+            favBtn.BackgroundColor3 = favoritePlayers[target.Name] and Color3.fromRGB(200, 150, 50) or Color3.fromRGB(55, 55, 60)
+            favBtn.Text = favoritePlayers[target.Name] and "Unfav" or "Fav"
+            favBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            favBtn.Font = Enum.Font.GothamBold
+            favBtn.TextSize = 12
+            local cornerFav = Instance.new("UICorner", favBtn)
+            cornerFav.CornerRadius = UDim.new(0, 4)
+            
+            favBtn.MouseButton1Click:Connect(function()
+                favoritePlayers[target.Name] = not favoritePlayers[target.Name]
+                refreshPlayerTabs()
+            end)
+        end
+    end
+end
+
+table.insert(connections, Players.PlayerAdded:Connect(function() refreshVisuals(); refreshPlayerTabs() end))
+table.insert(connections, Players.PlayerRemoving:Connect(function() refreshVisuals(); refreshPlayerTabs() end))
+refreshPlayerTabs()
+
+-- ==========================================
+-- Connection Loops (Physics & Input)
+-- ==========================================
+
+-- Ctrl+Click TP
+table.insert(connections, mouse.Button1Down:Connect(function()
+    if isCtrlClickOn and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
+            local targetPos = mouse.Hit.Position
+            player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+        end
+    end
+end))
+
+-- Infinity Jump
+table.insert(connections, UserInputService.JumpRequest:Connect(function()
+    if isInfJumpOn and player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end))
+
+-- Noclip Logic (Stepped runs before physics calculate)
+table.insert(connections, RunService.Stepped:Connect(function()
+    if isNoclipOn and player.Character then
+        for _, part in pairs(player.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end))
+
+-- RenderStepped Logic (Movement, Patrol, Speed)
+table.insert(connections, RunService.RenderStepped:Connect(function()
+    local char = player.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not hrp or not hum then return end
+
+    if isSpeedOn then
+        hum.WalkSpeed = tonumber(speedInput.Text) or 50
+    end
+
+    if isFlyOn then
+        workspace.Gravity = 0
+        local spd = tonumber(flyInput.Text) or 50
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then flyCtrl.f = spd else flyCtrl.f = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then flyCtrl.b = -spd else flyCtrl.b = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then flyCtrl.l = -spd else flyCtrl.l = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then flyCtrl.r = spd else flyCtrl.r = 0 end
+        
+        lastCtrl = {f = flyCtrl.f, b = flyCtrl.b, l = flyCtrl.l, r = flyCtrl.r}
+        
+        local moveDir = Vector3.new(lastCtrl.l + lastCtrl.r, 0, lastCtrl.f + lastCtrl.b)
+        if moveDir.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame * CFrame.new(lastCtrl.l + lastCtrl.r, 0, -(lastCtrl.f + lastCtrl.b))
+        end
+        hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + camera.CFrame.LookVector)
+        hum.PlatformStand = true
+    else
+        hum.PlatformStand = false
+    end
+
+    -- UPDATED PATROL WALKING LOGIC
+    if isPatrolOn and #patrolPoints > 0 and not isFlyOn then
+        local targetPos = patrolPoints[patrolIndex].Position
+        
+        -- Make the humanoid walk to the current point
+        hum:MoveTo(targetPos)
+        
+        -- Check distance (ignoring Y axis to prevent getting stuck on slight bumps)
+        local flatHrpPos = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
+        local flatTargetPos = Vector3.new(targetPos.X, 0, targetPos.Z)
+        
+        -- If player is within 4 studs of the point, cycle to the next one
+        if (flatHrpPos - flatTargetPos).Magnitude < 4 then
+            patrolIndex = patrolIndex + 1
+            if patrolIndex > #patrolPoints then
+                patrolIndex = 1
+            end
+        end
+    end
+end))
+
+-- ==========================================
+-- Unhook System
+-- ==========================================
+UnhookBtn.MouseButton1Click:Connect(function()
+    for _, conn in pairs(connections) do
+        conn:Disconnect()
+    end
+    
+    for _, inst in pairs(espInstances) do inst:Destroy() end
+    for _, inst in pairs(nametagInstances) do inst:Destroy() end
+    
+    if player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid.WalkSpeed = 16
+        player.Character.Humanoid.PlatformStand = false
+        player.Character.Humanoid:MoveTo(player.Character.HumanoidRootPart.Position)
+    end
+    workspace.Gravity = 196.2
+    ScreenGui:Destroy()
+end)
