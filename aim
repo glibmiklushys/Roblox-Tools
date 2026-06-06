@@ -1,0 +1,144 @@
+-- Optimized with On/Off GUI & Keybind Toggle
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- Configuration
+local LOCK_INPUT = Enum.UserInputType.MouseButton2 -- Right Mouse Button (Hold to lock)
+local TOGGLE_KEY = Enum.KeyCode.L                  -- Keyboard key to turn script ON/OFF
+local SMOOTHNESS = 1.0                             -- 1 = Instant snapping
+local FOV_LIMIT = 90                               -- Visual Field of View boundary
+
+-- State tracking
+local IsEnabled = true
+local AimConnection = nil
+
+-- Cleanup past executions completely
+if _G.AimLockConnection then _G.AimLockConnection:Disconnect() _G.AimLockConnection = nil end
+if _G.AimLockGui then _G.AimLockGui:Destroy() _G.AimLockGui = nil end
+
+-- Target Finder Logic (Your original math)
+local function getClosestPlayerToCrosshair()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+    
+    local viewportSize = Camera.ViewportSize
+    local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+    local fovRadius = (viewportSize.Y / 2) * (math.tan(math.rad(FOV_LIMIT / 2)) / math.tan(math.rad(Camera.FieldOfView / 2)))
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local head = player.Character.Head
+                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                
+                if onScreen then
+                    local crosshairDistance = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                    if crosshairDistance <= fovRadius and crosshairDistance < shortestDistance then
+                        shortestDistance = crosshairDistance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- Core Loop Management
+local function StartLoop()
+    if AimConnection then AimConnection:Disconnect() end
+    
+    AimConnection = RunService.RenderStepped:Connect(function()
+        if IsEnabled and UserInputService:IsMouseButtonPressed(LOCK_INPUT) and not UserInputService:GetFocusedTextBox() then
+            local targetPlayer = getClosestPlayerToCrosshair()
+            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("Head") then
+                local targetHead = targetPlayer.Character.Head
+                local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, SMOOTHNESS)
+            end
+        end
+    end)
+    _G.AimLockConnection = AimConnection
+end
+
+local function StopLoop()
+    if AimConnection then
+        AimConnection:Disconnect()
+        AimConnection = nil
+        _G.AimLockConnection = nil
+    end
+    Camera.CameraType = Enum.CameraType.Custom
+end
+
+-- Build UI Screen
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+local UIStroke = Instance.new("UIStroke")
+
+ScreenGui.Name = "AimLockGui"
+ScreenGui.ResetOnSpawn = false
+-- Protects UI from clearing or showing up in regular player lists depending on injector capabilities
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+_G.AimLockGui = ScreenGui
+
+-- Button Styling
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.Position = UDim2.new(0.05, 0, 0.15, 0) -- Top left side screen placement
+ToggleButton.Size = UDim2.new(0, 130, 0, 45)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 14
+ToggleButton.Active = true
+ToggleButton.Draggable = true -- Allows you to reposition it anywhere on your screen
+
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleButton
+
+UIStroke.Thickness = 2
+UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UIStroke.Parent = ToggleButton
+
+-- Visual Update Logic
+local function UpdateUIState()
+    if IsEnabled then
+        ToggleButton.Text = "AIM LOCK: ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 150, 80) -- Dark Green
+        ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        UIStroke.Color = Color3.fromRGB(46, 204, 113) -- Light Green Border
+        StartLoop()
+    else
+        ToggleButton.Text = "AIM LOCK: OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(150, 40, 40) -- Dark Red
+        ToggleButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+        UIStroke.Color = Color3.fromRGB(231, 76, 60) -- Light Red Border
+        StopLoop()
+    end
+end
+
+-- Trigger Toggle Actions
+local function ToggleScript()
+    IsEnabled = not IsEnabled
+    UpdateUIState()
+end
+
+ToggleButton.MouseButton1Click:Connect(ToggleScript)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == TOGGLE_KEY then
+        ToggleScript()
+    end
+end)
+
+-- Initialize script state
+UpdateUIState()
+print("Aim lock combo UI loaded. Click button or press 'L' to toggle.")
