@@ -1,4 +1,4 @@
--- Combined Aim Lock & ESP with Master GUI Control Panel
+-- Combined Script with Separate Independent Floating Buttons
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -32,7 +32,8 @@ local PlayerConnections = {}
 -- CLEANUP PREVIOUS RUNS
 --------------------------------------------------------------------
 if _G.AimLockConnection then _G.AimLockConnection:Disconnect() _G.AimLockConnection = nil end
-if _G.CombinedControlGui then _G.CombinedControlGui:Destroy() _G.CombinedControlGui = nil end
+if _G.SeparateAimGui then _G.SeparateAimGui:Destroy() _G.SeparateAimGui = nil end
+if _G.SeparateEspGui then _G.SeparateEspGui:Destroy() _G.SeparateEspGui = nil end
 if game.CoreGui:FindFirstChild("ESP") then game.CoreGui.ESP:Destroy() end
 for _, p in ipairs(Players:GetPlayers()) do
     if p.Character and p.Character:FindFirstChild("GetReal") then p.Character.GetReal:Destroy() end
@@ -57,8 +58,6 @@ NameTag.Name = "nilNameTag"
 NameTag.Enabled = false
 NameTag.Size = UDim2.new(0, 200, 0, 50)
 NameTag.AlwaysOnTop = true
-NameTag.Value = "nil"
-NameTag.Parent = nil
 
 local Tag = Instance.new("TextLabel", NameTag)
 Tag.Name = "Tag"
@@ -221,65 +220,48 @@ end)
 _G.AimLockConnection = AimConnection
 
 --------------------------------------------------------------------
--- GUI CREATION
+-- SEPARATE GUI GENERATION
 --------------------------------------------------------------------
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local FrameCorner = Instance.new("UICorner")
-local FrameStroke = Instance.new("UIStroke")
-local Title = Instance.new("TextLabel")
+local AimGui = Instance.new("ScreenGui")
+local EspGui = Instance.new("ScreenGui")
+
+AimGui.Name = "SeparateAimGui"
+EspGui.Name = "SeparateEspGui"
+AimGui.ResetOnSpawn = false
+EspGui.ResetOnSpawn = false
+
+pcall(function() AimGui.Parent = CoreGui EspGui.Parent = CoreGui end)
+if not AimGui.Parent then AimGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+if not EspGui.Parent then EspGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+_G.SeparateAimGui = AimGui
+_G.SeparateEspGui = EspGui
+
+-- Create Individual Buttons
 local AimButton = Instance.new("TextButton")
 local EspButton = Instance.new("TextButton")
 
-ScreenGui.Name = "CombinedControlGui"
-ScreenGui.ResetOnSpawn = false
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
-_G.CombinedControlGui = ScreenGui
-
--- Menu Frame Box
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
-MainFrame.Size = UDim2.new(0, 160, 0, 150)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-MainFrame.Active = true
-MainFrame.Draggable = true
-
-FrameCorner.CornerRadius = UDim.new(0, 10)
-FrameCorner.Parent = MainFrame
-FrameStroke.Thickness = 2
-FrameStroke.Color = Color3.fromRGB(60, 60, 60)
-FrameStroke.Parent = MainFrame
-
--- Title Styling
-Title.Name = "Title"
-Title.Parent = MainFrame
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.BackgroundTransparency = 1
-Title.Text = "CONTROL PANEL"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 13
-Title.Font = Enum.Font.GothamBold
-
--- Button Template Utility
-local function StyleButton(btn, text, yPos)
-    btn.Parent = MainFrame
-    btn.Position = UDim2.new(0.1, 0, 0, yPos)
-    btn.Size = UDim2.new(0.8, 0, 0, 38)
+local function StyleSeparateButton(btn, parent, text, pos)
+    btn.Parent = parent
+    btn.Position = pos
+    btn.Size = UDim2.new(0, 130, 0, 42)
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
+    btn.TextSize = 13
+    btn.Active = true
+    btn.Draggable = true
+    
     local c = Instance.new("UICorner", btn)
-    c.CornerRadius = UDim.new(0, 6)
+    c.CornerRadius = UDim.new(0, 8)
     local s = Instance.new("UIStroke", btn)
-    s.Thickness = 1
+    s.Thickness = 2
 end
 
-StyleButton(AimButton, "AIM LOCK: ON", 45)
-StyleButton(EspButton, "ESP: ON", 95)
+-- Spawn side-by-side initially on upper-left portion of the screen
+StyleSeparateButton(AimButton, AimGui, "AIM LOCK: ON", UDim2.new(0.02, 0, 0.15, 0))
+StyleSeparateButton(EspButton, EspGui, "ESP: ON", UDim2.new(0.02, 140, 0.15, 0))
 
 --------------------------------------------------------------------
--- INTERACTION & TOGGLE CONTROLS
+-- INTERACTION MANAGEMENT
 --------------------------------------------------------------------
 local function UpdateUI()
     if AimEnabled then
@@ -304,36 +286,39 @@ local function UpdateUI()
         EspButton.BackgroundColor3 = Color3.fromRGB(130, 35, 35)
         EspButton.TextColor3 = Color3.fromRGB(220, 220, 220)
         EspButton.UIStroke.Color = Color3.fromRGB(231, 76, 60)
-        -- Instantly clear instances when turned off
         for _, v in pairs(Players:GetPlayers()) do UnloadCharacter(v) end
     end
 end
 
--- Wire Toggles
-AimButton.MouseButton1Click:Connect(function() AimEnabled = not AimEnabled UpdateUI() end)
-EspButton.MouseButton1Click:Connect(function() 
-    EspEnabled = not EspEnabled 
-    UpdateUI() 
+-- Function maps
+local function ToggleAim()
+    AimEnabled = not AimEnabled
+    UpdateUI()
+end
+
+local function ToggleEsp()
+    EspEnabled = not EspEnabled
+    UpdateUI()
     if EspEnabled then 
         for _, v in pairs(Players:GetPlayers()) do pcall(LoadCharacter, v) end 
-    end 
-end)
+    end
+end
 
+-- Mouse Triggers
+AimButton.MouseButton1Click:Connect(ToggleAim)
+EspButton.MouseButton1Click:Connect(ToggleEsp)
+
+-- Keyboard Key Triggers
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == AIM_TOGGLE_KEY then
-        AimEnabled = not AimEnabled
-        UpdateUI()
+        ToggleAim()
     elseif input.KeyCode == ESP_TOGGLE_KEY then
-        EspEnabled = not EspEnabled
-        UpdateUI()
-        if EspEnabled then 
-            for _, v in pairs(Players:GetPlayers()) do pcall(LoadCharacter, v) end 
-        end
+        ToggleEsp()
     end
 end)
 
--- Initialize Player Listeners
+-- Initialize listeners
 for _, v in pairs(Players:GetPlayers()) do LoadPlayer(v) end
 Players.PlayerAdded:Connect(LoadPlayer)
 Players.PlayerRemoving:Connect(UnloadPlayer)
