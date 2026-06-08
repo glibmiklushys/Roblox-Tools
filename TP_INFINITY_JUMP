@@ -1,0 +1,113 @@
+-- [[ Screen GUI Setup ]]
+local Player = game:GetService("Players").LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
+local mouse = Player:GetMouse()
+
+-- Remove old GUI if it exists to avoid duplication
+if PlayerGui:FindFirstChild("ModMenuGUI") then
+    PlayerGui.ModMenuGUI:Destroy()
+end
+
+-- Create ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ModMenuGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+-- Main Container Frame
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 140)
+Frame.Position = UDim2.new(0.05, 0, 0.4, 0) -- Top-left-ish area of the screen
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true -- Allows you to drag the menu around your screen
+Frame.Parent = ScreenGui
+
+-- Title Label
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Text = "Simple Mod Menu"
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 16
+Title.BorderSizePixel = 0
+Title.Parent = Frame
+
+-- Helper function to quickly create styled buttons
+local function createButton(name, text, positionY)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(0, 180, 0, 40)
+    btn.Position = UDim2.new(0, 10, 0, positionY)
+    btn.BackgroundColor3 = Color3.fromRGB(180, 50, 50) -- Default Red (OFF)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 16
+    btn.Text = text .. ": OFF"
+    btn.BorderSizePixel = 0
+    btn.Parent = Frame
+    
+    -- Rounded corners
+    local uiCorner = Instance.new("UICorner")
+    uiCorner.CornerRadius = UDim.new(0, 6)
+    uiCorner.Parent = btn
+    
+    return btn
+end
+
+-- Create the two toggle buttons
+local TPButton = createButton("TPButton", "Click TP", 40)
+local JumpButton = createButton("JumpButton", "Inf Jump", 90)
+
+
+-- [[ Feature 1: Click Teleport Logic ]]
+_G.WRDClickTeleport = false -- Starts OFF
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if _G.WRDClickTeleport and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                Player.Character:MoveTo(Vector3.new(mouse.Hit.X, mouse.Hit.Y, mouse.Hit.Z))
+            end
+        end
+    end
+end)
+
+TPButton.MouseButton1Click:Connect(function()
+    _G.WRDClickTeleport = not _G.WRDClickTeleport
+    if _G.WRDClickTeleport then
+        TPButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50) -- Green (ON)
+        TPButton.Text = "Click TP: ON"
+    else
+        TPButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50) -- Red (OFF)
+        TPButton.Text = "Click TP: OFF"
+    end
+end)
+
+
+-- [[ Feature 2: Infinite Jump Logic ]]
+_G.InfJumpEnabled = false -- Starts OFF
+
+UserInputService.JumpRequest:Connect(function()
+    if _G.InfJumpEnabled then
+        local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+JumpButton.MouseButton1Click:Connect(function()
+    _G.InfJumpEnabled = not _G.InfJumpEnabled
+    if _G.InfJumpEnabled then
+        JumpButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50) -- Green (ON)
+        JumpButton.Text = "Inf Jump: ON"
+    else
+        JumpButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50) -- Red (OFF)
+        JumpButton.Text = "Inf Jump: OFF"
+    end
+end)
