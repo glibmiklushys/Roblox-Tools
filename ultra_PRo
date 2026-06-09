@@ -1,4 +1,4 @@
--- Combined Script with Separate Independent Floating Buttons
+-- Combined Script with 300 Stud Distance Limit on both ESP and Aim Lock
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,10 +16,12 @@ local AIM_TOGGLE_KEY = Enum.KeyCode.L              -- Keyboard key for Aim Lock
 local ESP_TOGGLE_KEY = Enum.KeyCode.K              -- Keyboard key for ESP
 local SMOOTHNESS = 1.0                             -- Aim Snapping Smoothness
 local FOV_LIMIT = 90                               -- Aim FOV
+local MAX_DISTANCE = 300                           -- Max Range for both ESP & Aim (in Studs)
 
 _G.FriendColor = Color3.fromRGB(0, 0, 255)
 _G.EnemyColor = Color3.fromRGB(255, 0, 0)
 _G.UseTeamColor = true
+local HEAD_HITBOX_COLOR = Color3.fromRGB(255, 0, 0) -- Pure Red for Head Hitbox
 
 local AimEnabled = true
 local EspEnabled = true
@@ -36,7 +38,12 @@ if _G.SeparateAimGui then _G.SeparateAimGui:Destroy() _G.SeparateAimGui = nil en
 if _G.SeparateEspGui then _G.SeparateEspGui:Destroy() _G.SeparateEspGui = nil end
 if game.CoreGui:FindFirstChild("ESP") then game.CoreGui.ESP:Destroy() end
 for _, p in ipairs(Players:GetPlayers()) do
-    if p.Character and p.Character:FindFirstChild("GetReal") then p.Character.GetReal:Destroy() end
+    if p.Character then
+        if p.Character:FindFirstChild("GetReal") then p.Character.GetReal:Destroy() end
+        if p.Character:FindFirstChild("Head") and p.Character.Head:FindFirstChild("HeadHitboxESP") then
+            p.Character.Head.HeadHitboxESP:Destroy()
+        end
+    end
 end
 
 --------------------------------------------------------------------
@@ -45,19 +52,12 @@ end
 local Holder = Instance.new("Folder", game.CoreGui)
 Holder.Name = "ESP"
 
-local Box = Instance.new("BoxHandleAdornment")
-Box.Name = "nilBox"
-Box.Size = Vector3.new(1, 2, 1)
-Box.Transparency = 0.7
-Box.ZIndex = 0
-Box.AlwaysOnTop = false
-Box.Visible = false
-
 local NameTag = Instance.new("BillboardGui")
 NameTag.Name = "nilNameTag"
 NameTag.Enabled = false
 NameTag.Size = UDim2.new(0, 200, 0, 50)
 NameTag.AlwaysOnTop = true
+NameTag.StudsOffset = Vector3.new(0, 4.5, 0) 
 
 local Tag = Instance.new("TextLabel", NameTag)
 Tag.Name = "Tag"
@@ -74,8 +74,13 @@ Tag.Font = Enum.Font.SourceSansBold
 local function UnloadCharacter(v)
     local vHolder = Holder:FindFirstChild(v.Name)
     if vHolder then vHolder:ClearAllChildren() end
-    if v.Character and v.Character:FindFirstChild("GetReal") then
-        v.Character.GetReal:Destroy()
+    if v.Character then
+        if v.Character:FindFirstChild("GetReal") then
+            v.Character.GetReal:Destroy()
+        end
+        if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("HeadHitboxESP") then
+            v.Character.Head.HeadHitboxESP:Destroy()
+        end
     end
 end
 
@@ -88,19 +93,15 @@ local function LoadCharacter(v)
     if not vHolder then return end
     vHolder:ClearAllChildren()
     
-    local b = Box:Clone()
-    b.Name = v.Name .. "Box"
-    b.Adornee = v.Character
-    b.Parent = vHolder
-    
+    local headPart = v.Character:WaitForChild("Head", 5)
+    if not headPart then return UnloadCharacter(v) end
+
     local t = NameTag:Clone()
     t.Name = v.Name .. "NameTag"
     t.Enabled = true
     t.Parent = vHolder
-    t.Adornee = v.Character:WaitForChild("Head", 5)
-    if not t.Adornee then return UnloadCharacter(v) end
+    t.Adornee = headPart
     
-    b.Color3 = Color3.new(v.TeamColor.r, v.TeamColor.g, v.TeamColor.b)
     t.Tag.TextColor3 = Color3.new(v.TeamColor.r, v.TeamColor.g, v.TeamColor.b)
     
     local Update
@@ -158,17 +159,27 @@ local function getClosestPlayerToCrosshair()
     local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
     local fovRadius = (viewportSize.Y / 2) * (math.tan(math.rad(FOV_LIMIT / 2)) / math.tan(math.rad(Camera.FieldOfView / 2)))
 
+    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                local head = player.Character.Head
-                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                if onScreen then
-                    local crosshairDistance = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
-                    if crosshairDistance <= fovRadius and crosshairDistance < shortestDistance then
-                        shortestDistance = crosshairDistance
-                        closestPlayer = player
+            local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            
+            -- Check Distance for Aim Lock compatibility
+            if localRoot and targetRoot then
+                local distance = (localRoot.Position - targetRoot.Position).Magnitude
+                if distance <= MAX_DISTANCE then -- Must be within 300 units
+                    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health > 0 then
+                        local head = player.Character.Head
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                        if onScreen then
+                            local crosshairDistance = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                            if crosshairDistance <= fovRadius and crosshairDistance < shortestDistance then
+                                shortestDistance = crosshairDistance
+                                closestPlayer = player
+                            end
+                        end
                     end
                 end
             end
@@ -181,6 +192,8 @@ end
 -- CORE LOOPS RUNNER
 --------------------------------------------------------------------
 AimConnection = RunService.RenderStepped:Connect(function()
+    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
     -- Aim Lock Handling
     if AimEnabled and UserInputService:IsMouseButtonPressed(LOCK_INPUT) and not UserInputService:GetFocusedTextBox() then
         local targetPlayer = getClosestPlayerToCrosshair()
@@ -191,28 +204,86 @@ AimConnection = RunService.RenderStepped:Connect(function()
         end
     end
     
-    -- Highlight ESP Handling
+    -- Highlight & Head Hitbox ESP Handling
     if EspEnabled then
         for _, v in pairs(Players:GetPlayers()) do
             if v ~= LocalPlayer and v.Character then
-                local color = _G.UseTeamColor and v.TeamColor.Color or ((LocalPlayer.TeamColor == v.TeamColor) and _G.FriendColor or _G.EnemyColor)
-                if not v.Character:FindFirstChild("GetReal") then
-                    local highlight = Instance.new("Highlight")
-                    highlight.RobloxLocked = true
-                    highlight.Name = "GetReal"
-                    highlight.Adornee = v.Character
-                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                local targetRoot = v.Character:FindFirstChild("HumanoidRootPart")
+                local withinRange = false
+                
+                -- Verify if the target character is inside the 300 stud distance threshold
+                if localRoot and targetRoot then
+                    local distance = (localRoot.Position - targetRoot.Position).Magnitude
+                    if distance <= MAX_DISTANCE then
+                        withinRange = true
+                    end
+                end
+                
+                -- Render ESP elements if within range, suppress them if they move outside bounds
+                if withinRange then
+                    local color = _G.UseTeamColor and v.TeamColor.Color or ((LocalPlayer.TeamColor == v.TeamColor) and _G.FriendColor or _G.EnemyColor)
+                    
+                    -- Main Character Outline Highlight
+                    local highlight = v.Character:FindFirstChild("GetReal")
+                    if not highlight then
+                        highlight = Instance.new("Highlight")
+                        highlight.RobloxLocked = true
+                        highlight.Name = "GetReal"
+                        highlight.Adornee = v.Character
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Parent = v.Character
+                    end
                     highlight.FillColor = color
-                    highlight.Parent = v.Character
+                    highlight.Enabled = true
+
+                    -- Red Head Hitbox Accent Rendering
+                    local head = v.Character:FindFirstChild("Head")
+                    if head then
+                        local headBox = head:FindFirstChild("HeadHitboxESP")
+                        if not headBox then
+                            headBox = Instance.new("BoxHandleAdornment")
+                            headBox.Name = "HeadHitboxESP"
+                            headBox.Size = head.Size + Vector3.new(0.4, 0.4, 0.4)
+                            headBox.Color3 = HEAD_HITBOX_COLOR
+                            headBox.Transparency = 0.4
+                            headBox.AlwaysOnTop = true
+                            headBox.ZIndex = 10
+                            headBox.Adornee = head
+                            headBox.Parent = head
+                        end
+                        headBox.Visible = true
+                    end
+                    
+                    -- Keep BillboardGui NameTag display toggled active
+                    local vHolder = Holder:FindFirstChild(v.Name)
+                    if vHolder then
+                        local t = vHolder:FindFirstChild(v.Name .. "NameTag")
+                        if t then t.Enabled = true end
+                    end
                 else
-                    v.Character.GetReal.FillColor = color
+                    -- Suppress indicators safely if out of spatial range
+                    if v.Character:FindFirstChild("GetReal") then v.Character.GetReal.Enabled = false end
+                    if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("HeadHitboxESP") then
+                        v.Character.Head.HeadHitboxESP.Visible = false
+                    end
+                    local vHolder = Holder:FindFirstChild(v.Name)
+                    if vHolder then
+                        local t = vHolder:FindFirstChild(v.Name .. "NameTag")
+                        if t then t.Enabled = false end
+                    end
                 end
             end
         end
     else
+        -- Total Clear when ESP Disabled entirely
         for _, v in pairs(Players:GetPlayers()) do
-            if v.Character and v.Character:FindFirstChild("GetReal") then
-                v.Character.GetReal:Destroy()
+            if v.Character then
+                if v.Character:FindFirstChild("GetReal") then
+                    v.Character.GetReal:Destroy()
+                end
+                if v.Character:FindFirstChild("Head") and v.Character.Head:FindFirstChild("HeadHitboxESP") then
+                    v.Character.Head.HeadHitboxESP:Destroy()
+                end
             end
         end
     end
