@@ -1,0 +1,52 @@
+local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Turtle-Brand/Turtle-Lib/main/source.lua"))()
+local m = lib:Window("Rainbow Island Farm")
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local rainbowResources = game:GetService("Workspace"):WaitForChild("RainbowIsland"):WaitForChild("Resources")
+
+getgenv().rainbowSettings = {
+    farm_all = false,
+    farm_thirty = false
+}
+
+--// 1. Farm ALL Resources on Rainbow Island
+m:Toggle("Farm All Rainbow Resources", rainbowSettings.farm_all, function(b)
+    rainbowSettings.farm_all = b
+    task.spawn(function()
+        while rainbowSettings.farm_all do
+            for _, r in ipairs(rainbowResources:GetChildren()) do
+                ReplicatedStorage:WaitForChild("Communication"):WaitForChild("HitResource"):FireServer(r)
+                task.wait(0.01)
+            end
+            task.wait(0.8)
+        end
+    end)
+end)
+
+--// 2. Farm ONLY the 30th Resource
+m:Toggle("Farm 30th Resource Only", rainbowSettings.farm_thirty, function(b)
+    rainbowSettings.farm_thirty = b
+    task.spawn(function()
+        while rainbowSettings.farm_thirty do
+            local children = rainbowResources:GetChildren()
+            local targetResource = children[30]
+            
+            if targetResource then
+                ReplicatedStorage:WaitForChild("Communication"):WaitForChild("HitResource"):FireServer(targetResource)
+            else
+                warn("30th resource not found inside RainbowIsland.Resources!")
+            end
+            task.wait(0.8)
+        end
+    end)
+end)
+
+m:Label("Press LeftControl to Hide UI", Color3.fromRGB(127, 143, 166))
+
+m:Button("Destroy Gui", function()
+    rainbowSettings.farm_all = false
+    rainbowSettings.farm_thirty = false
+    lib:Destroy()
+end)
+
+lib:Keybind("LeftControl")
