@@ -1,0 +1,277 @@
+local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Turtle-Brand/Turtle-Lib/main/source.lua"))()
+local m = lib:Window("Build An Island")
+
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+local plotsFolder = game:GetService("Workspace"):WaitForChild("Plots")
+
+-- Local plot kept for single-plot features (like selling/crafting)
+local myPlot = plotsFolder:WaitForChild(plr.Name)
+local land = myPlot:FindFirstChild("Land")
+local expand = myPlot:WaitForChild("Expand")
+
+getgenv().settings = {
+    farm = false,
+    farm_range = false,
+    range_val = 50,
+    expand = false,
+    craft = false,
+    sell = false,
+    gold = false,
+    collect = false,
+    harvest = false,
+    hive = false
+}
+
+local expand_delay = 0.1
+local craft_delay = 0.1
+
+--// Radius Visualizer Setup
+local visualRing = Instance.new("CylinderHandleAdornment")
+visualRing.Name = "FarmRadiusVisualizer"
+visualRing.Color3 = Color3.fromRGB(255, 0, 0)
+visualRing.Transparency = 0.4
+visualRing.AlwaysOnTop = false
+visualRing.ZIndex = 5
+
+-- Simple helper to update visual ring placement and sizing
+local function updateVisualizer()
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if hrp and settings.farm_range then
+        visualRing.Adornee = hrp
+        -- Cylinder points lengthwise along Y-axis, height is thickness, radius is our range
+        visualRing.Height = 0.2 
+        visualRing.Radius = settings.range_val
+        visualRing.CFrame = CFrame.new(0, -3, 0) * CFrame.Angles(math.rad(90), 0, 0)
+        visualRing.Parent = hrp
+    else
+        visualRing.Parent = nil
+    end
+end
+
+-- Track whenever the character spawns or updates to bind the visualizer
+plr.CharacterAdded:Connect(function()
+    task.wait(1)
+    updateVisualizer()
+end)
+
+--// 1. All-Plots Auto Farm (Global)
+m:Toggle("Auto Farm Resources", settings.farm, function (b)
+    settings.farm = b
+    task.spawn(function()
+        while settings.farm do
+            for _, plot in ipairs(plotsFolder:GetChildren()) do
+                local resources = plot:FindFirstChild("Resources")
+                if resources then
+                    for _, r in ipairs(resources:GetChildren()) do
+                        game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("HitResource"):FireServer(r)
+                        task.wait(.01)
+                    end
+                end
+            end
+            task.wait(.1)
+        end
+    end)
+end)
+
+--// 2. Range-Based Auto Farm (Optimized to loop every 0.8 seconds)
+m:Toggle("Auto Farm (Range)", settings.farm_range, function (b)
+    settings.farm_range = b
+    updateVisualizer() -- Refresh visualizer state on toggle
+    
+    task.spawn(function()
+        while settings.farm_range do
+            local char = plr.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                -- Re-anchor visualizer just in case character updated
+                if visualRing.Parent ~= hrp then 
+                    updateVisualizer() 
+                end
+                
+                for _, plot in ipairs(plotsFolder:GetChildren()) do
+                    local resources = plot:FindFirstChild("Resources")
+                    if resources then
+                        for _, r in ipairs(resources:GetChildren()) do
+                            local targetPart = r:IsA("Model") and r.PrimaryPart or r:FindFirstChildWhichIsA("BasePart")
+                            if targetPart then
+                                local distance = (hrp.Position - targetPart.Position).Magnitude
+                                if distance <= settings.range_val then
+                                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("HitResource"):FireServer(r)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.8) -- Fires clean batch loops every 0.8s
+        end
+        updateVisualizer() -- Turn off if loop finishes
+    end)
+end)
+
+--// Slider for Range Selection (Up to 5000)
+m:Slider("Farm Range Slider", 10, 5000, settings.range_val, function(v)
+    settings.range_val = v
+    updateVisualizer()
+end)
+
+--// Text Box for Manual Range Input
+m:Box("Range (Max 5000)", function(t)
+    local num = tonumber(t)
+    if num then
+        settings.range_val = math.clamp(num, 10, 5000)
+        updateVisualizer()
+    end
+end)
+
+m:Toggle("Auto Expand Land", settings.expand, function (b)
+    settings.expand = b
+    task.spawn(function()
+        while settings.expand do
+            for _, exp in ipairs(expand:GetChildren()) do
+                local top = exp:FindFirstChild("Top")
+                if top then
+                    local bGui = top:FindFirstChild("BillboardGui")
+                    if bGui then
+                        for _, contribute in ipairs(bGui:GetChildren()) do
+                            if contribute:IsA("Frame") and contribute.Name ~= "Example" then
+                                local args = {
+                                    exp.Name,
+                                    contribute.Name,
+                                    1
+                                }
+                                game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("ContributeToExpand"):FireServer(unpack(args))
+                            end
+                        end
+                    end
+                end
+                task.wait(0.01)
+            end
+            task.wait(expand_delay)
+        end
+    end)
+end)
+
+m:Toggle("Auto Crafter", settings.craft, function (b)
+    settings.craft = b
+    task.spawn(function ()
+        while settings.craft do
+            for _, c in pairs(myPlot:GetDescendants()) do
+                if c.Name == "Crafter" then
+                    local attachment = c:FindFirstChildOfClass("Attachment")
+                    if attachment then
+                        game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Craft"):FireServer(attachment)
+                    end
+                end
+            end
+            task.wait(craft_delay)
+        end
+    end)
+end)
+
+m:Toggle("Auto Gold Mine", settings.gold, function (b)
+    settings.gold = b
+    task.spawn(function ()
+        while settings.gold do
+            for _, mine in pairs(land:GetDescendants()) do
+                if mine:IsA("Model") and mine.Name == "GoldMineModel" then
+                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Goldmine"):FireServer(mine.Parent.Name, 1)
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)
+
+m:Toggle("Auto Collect Gold", settings.collect, function (b)
+    settings.collect = b
+    task.spawn(function ()
+        while settings.collect do
+            for _, mine in pairs(land:GetDescendants()) do
+                if mine:IsA("Model") and mine.Name == "GoldMineModel" then
+                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Goldmine"):FireServer(mine.Parent.Name, 2)
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)
+
+m:Toggle("Auto Sell", settings.sell, function (b)
+    settings.sell = b
+    task.spawn(function ()
+        while settings.sell do
+            for _, crop in pairs(plr.Backpack:GetChildren()) do
+                if crop:GetAttribute("Sellable") then
+                    local a = {
+                        false,
+                        {
+                            crop:GetAttribute("Hash")
+                        }
+                    }
+                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("SellToMerchant"):FireServer(unpack(a))
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)
+
+m:Toggle("Auto Harvest", settings.harvest, function (b)
+    settings.harvest = b
+    task.spawn(function ()
+        while settings.harvest do
+            local plants = myPlot:FindFirstChild("Plants")
+            if plants then
+                for _, crop in pairs(plants:GetChildren()) do
+                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Harvest"):FireServer(crop.Name)
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)
+
+m:Toggle("Auto Collect Hive", settings.hive, function (b)
+    settings.hive = b
+    task.spawn(function ()
+        while settings.hive do
+            for _, spot in ipairs(land:GetDescendants()) do
+                if spot:IsA("Model") and spot.Name:match("Spot") then
+                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Hive"):FireServer(spot.Parent.Name, spot.Name, 2)
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)
+
+m:Button("Anti AFK", function ()
+    local bb = game:GetService("VirtualUser")
+    plr.Idled:connect(function()
+        bb:CaptureController()
+        bb:ClickButton2(Vector2.new())
+    end)
+end)
+
+m:Label("Press LeftControl to Hide UI", Color3.fromRGB(127, 143, 166))
+
+m:Button("Destroy Gui", function ()
+    settings.farm = false;
+    settings.farm_range = false;
+    settings.expand = false;
+    settings.craft = false;
+    settings.sell = false;
+    settings.gold = false;
+    settings.collect = false;
+    settings.harvest = false;
+    settings.hive = false;
+    if visualRing then visualRing:Destroy() end
+    lib:Destroy()
+end)
+
+lib:Keybind("LeftControl")
