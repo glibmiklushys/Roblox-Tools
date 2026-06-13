@@ -1,0 +1,249 @@
+-- Protect against multiple script executions
+local existingGui = game:GetService("CoreGui"):FindFirstChild("CustomFarmUI") or game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerGui"):FindFirstChild("CustomFarmUI")
+if existingGui then existingGui:Destroy() end
+
+-- Variables & Settings
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local plr = Players.LocalPlayer
+local plotsFolder = game:GetService("Workspace"):WaitForChild("Plots")
+
+getgenv().CustomFarmSettings = {
+    Active = false,
+    Range = 2500 -- Starting middle value for 1-5000 range
+}
+
+--// Radius Visualizer Setup
+local visualRing = Instance.new("CylinderHandleAdornment")
+visualRing.Name = "FarmRadiusVisualizer"
+visualRing.Color3 = Color3.fromRGB(255, 0, 0)
+visualRing.Transparency = 0.4
+visualRing.AlwaysOnTop = false
+visualRing.ZIndex = 5
+
+local function updateVisualizer()
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if hrp and CustomFarmSettings.Active then
+        visualRing.Adornee = hrp
+        visualRing.Height = 0.2 
+        visualRing.Radius = CustomFarmSettings.Range
+        visualRing.CFrame = CFrame.new(0, -3, 0) * CFrame.Angles(math.rad(90), 0, 0)
+        visualRing.Parent = hrp
+    else
+        visualRing.Parent = nil
+    end
+end
+
+plr.CharacterAdded:Connect(function()
+    task.wait(1)
+    updateVisualizer()
+end)
+
+-- Create UI
+local CustomFarmUI = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local Title = Instance.new("TextLabel")
+local ToggleBtn = Instance.new("TextButton")
+local ToggleCorner = Instance.new("UICorner")
+local SliderBackground = Instance.new("Frame")
+local SliderCorner = Instance.new("UICorner")
+local SliderFill = Instance.new("Frame")
+local FillCorner = Instance.new("UICorner")
+local SliderBtn = Instance.new("TextButton")
+local SliderBtnCorner = Instance.new("UICorner")
+local SliderValueLabel = Instance.new("TextLabel")
+
+-- Properties
+CustomFarmUI.Name = "CustomFarmUI"
+CustomFarmUI.Parent = game:GetService("CoreGui") or plr:WaitForChild("PlayerGui")
+CustomFarmUI.ResetOnSpawn = false
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = CustomFarmUI
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+MainFrame.Position = UDim2.new(0.05, 0, 0.4, 0)
+MainFrame.Size = UDim2.new(0, 220, 0, 160)
+MainFrame.Active = true
+MainFrame.Selectable = true
+
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 0, 0, 10)
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "RANGE FARMER"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+
+-- Toggle Button (On/Off)
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Parent = MainFrame
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+ToggleBtn.Position = UDim2.new(0, 20, 0, 45)
+ToggleBtn.Size = UDim2.new(1, -40, 0, 35)
+ToggleBtn.Font = Enum.Font.GothamSemibold
+ToggleBtn.Text = "Farm: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 14
+
+ToggleCorner.CornerRadius = UDim.new(0, 6)
+ToggleCorner.Parent = ToggleBtn
+
+-- Slider Background
+SliderBackground.Name = "SliderBackground"
+SliderBackground.Parent = MainFrame
+SliderBackground.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+SliderBackground.Position = UDim2.new(0, 20, 0, 110)
+SliderBackground.Size = UDim2.new(1, -40, 0, 10)
+
+SliderCorner.CornerRadius = UDim.new(0, 4)
+SliderCorner.Parent = SliderBackground
+
+-- Slider Fill Bar
+SliderFill.Name = "SliderFill"
+SliderFill.Parent = SliderBackground
+SliderFill.BackgroundColor3 = Color3.fromRGB(255, 75, 75)
+SliderFill.Size = UDim2.new(0.5, 0, 1, 0)
+
+FillCorner.CornerRadius = UDim.new(0, 4)
+FillCorner.Parent = SliderFill
+
+-- Slider Knob Button
+SliderBtn.Name = "SliderBtn"
+SliderBtn.Parent = SliderBackground
+SliderBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SliderBtn.Position = UDim2.new(0.5, -6, 0, -3)
+SliderBtn.Size = UDim2.new(0, 12, 0, 16)
+SliderBtn.Text = ""
+
+SliderBtnCorner.CornerRadius = UDim.new(0, 4)
+SliderBtnCorner.Parent = SliderBtn
+
+-- Slider Text Value Label
+SliderValueLabel.Name = "SliderValueLabel"
+SliderValueLabel.Parent = MainFrame
+SliderValueLabel.BackgroundTransparency = 1
+SliderValueLabel.Position = UDim2.new(0, 20, 0, 90)
+SliderValueLabel.Size = UDim2.new(1, -40, 0, 15)
+SliderValueLabel.Font = Enum.Font.Gotham
+SliderValueLabel.Text = "Range: 2500 studs"
+SliderValueLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SliderValueLabel.TextSize = 12
+SliderValueLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- UI Dragging functionality
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Toggle Logic
+ToggleBtn.MouseButton1Click:Connect(function()
+    CustomFarmSettings.Active = not CustomFarmSettings.Active
+    updateVisualizer()
+    if CustomFarmSettings.Active then
+        ToggleBtn.Text = "Farm: ON"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+    else
+        ToggleBtn.Text = "Farm: OFF"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+    end
+end)
+
+-- Slider Logic (Min: 1, Max: 5000)
+local minVal = 1
+local maxVal = 5000
+
+local function updateSlider(input)
+    local relativeX = math.clamp((input.Position.X - SliderBackground.AbsolutePosition.X) / SliderBackground.AbsoluteSize.X, 0, 1)
+    SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+    SliderBtn.Position = UDim2.new(relativeX, -6, 0, -3)
+    
+    local calculatedValue = math.floor(minVal + (relativeX * (maxVal - minVal)))
+    if calculatedValue < 1 then calculatedValue = 1 end
+    
+    CustomFarmSettings.Range = calculatedValue
+    SliderValueLabel.Text = "Range: " .. tostring(calculatedValue) .. " studs"
+    updateVisualizer()
+end
+
+local sliderActive = false
+SliderBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        sliderActive = true
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if sliderActive and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        updateSlider(input)
+    end
+end)
+UserInputService.InputBegan:Connect(function(input)
+    if sliderActive and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        updateSlider(input)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        sliderActive = false
+    end
+end)
+
+-- Background farm loop running exactly every 0.75 seconds across all player islands
+task.spawn(function()
+    while true do
+        task.wait(0.75)
+        if CustomFarmSettings.Active then
+            local char = plr.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                -- Keep ring matched to character tracking position changes
+                if visualRing.Parent ~= hrp then 
+                    updateVisualizer() 
+                end
+                
+                -- Loop through ALL plots on the server exactly like the big menu
+                for _, plot in ipairs(plotsFolder:GetChildren()) do
+                    local resources = plot:FindFirstChild("Resources")
+                    if resources then
+                        for _, r in ipairs(resources:GetChildren()) do
+                            local targetPart = r:IsA("Model") and r.PrimaryPart or r:FindFirstChildWhichIsA("BasePart")
+                            if targetPart then
+                                local distance = (hrp.Position - targetPart.Position).Magnitude
+                                if distance <= CustomFarmSettings.Range then
+                                    game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("HitResource"):FireServer(r)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
