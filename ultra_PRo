@@ -12,8 +12,8 @@ local Camera = Workspace.CurrentCamera
 -- CONFIGURATION & STATES
 --------------------------------------------------------------------
 local LOCK_INPUT = Enum.UserInputType.MouseButton2 -- Right Mouse Button (Hold)
-local AIM_TOGGLE_KEY = Enum.KeyCode.L              -- Keyboard key for Aim Lock
-local ESP_TOGGLE_KEY = Enum.KeyCode.K              -- Keyboard key for ESP
+local AIM_TOGGLE_KEY = Enum.KeyCode.Z              -- Keyboard key for Aim Lock
+local ESP_TOGGLE_KEY = Enum.KeyCode.X              -- Keyboard key for ESP
 local SMOOTHNESS = 1.0                             -- Aim Snapping Smoothness
 local FOV_LIMIT = 90                               -- Aim FOV
 local MAX_DISTANCE = 300                           -- Max Range for both ESP & Aim (in Studs)
