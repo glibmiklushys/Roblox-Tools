@@ -1,0 +1,3975 @@
+-- https://lua.expert/
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ContextActionService = game:GetService("ContextActionService")
+
+game:GetService("UserInputService")
+
+local UIConfig = require(ReplicatedStorage.Modules.UIConfig)
+local ok, result = pcall(require, ReplicatedStorage.Modules.GamepadNav)
+
+if not ok or type(result) ~= "table" then
+	result = {
+		Push = function() --[[ Push | Line: 35 ]]
+			return nil
+		end,
+		Pop = function() --[[ Pop | Line: 35 ]] end,
+		Refresh = function() --[[ Refresh | Line: 35 ]] end,
+		IsGamepad = function() --[[ IsGamepad | Line: 35 ]]
+			return false
+		end
+	}
+end
+
+local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
+local MutatorModule = require(ReplicatedStorage.Modules.MutatorModule)
+local Monetisation = require(ReplicatedStorage.Modules.Monetisation)
+local SpotlightUI = require(ReplicatedStorage.ThirdParty.SpotlightUI)
+local Helpers = UIConfig.Helpers
+local Sounds = SoundService:WaitForChild("Sounds")
+local UIClick = Sounds:WaitForChild("UIClick")
+
+Sounds:WaitForChild("BidHit")
+
+local BidMiss = Sounds:WaitForChild("BidMiss")
+local Whoosh = Sounds:WaitForChild("Whoosh")
+local Sound = Instance.new("Sound")
+
+Sound.SoundId = "rbxassetid://84407162805589"
+Sound.Volume = 1
+Sound.Parent = SoundService
+
+local function playOnce(p1) --[[ playOnce | Line: 61 | Upvalues: SoundService (copy) ]]
+	if p1 then
+		local v1 = p1:Clone()
+
+		v1.Parent = SoundService
+		v1:Play()
+		v1.Ended:Connect(function() --[[ Line: 66 | Upvalues: v1 (copy) ]]
+			v1:Destroy()
+		end)
+	end
+end
+
+local function playOnceLouder(p1, p2) --[[ playOnceLouder | Line: 73 | Upvalues: SoundService (copy) ]]
+	if p1 then
+		local v1 = p1:Clone()
+
+		v1.Volume = p1.Volume + (p2 or 0)
+		v1.Parent = SoundService
+		v1:Play()
+		v1.Ended:Connect(function() --[[ Line: 79 | Upvalues: v1 (copy) ]]
+			v1:Destroy()
+		end)
+	end
+end
+
+local Events = ReplicatedStorage:WaitForChild("Events")
+local Auction = Events:WaitForChild("Auction")
+local Shop = Events:WaitForChild("Shop")
+local t = {}
+
+local function getRemote(p1, p2) --[[ getRemote | Line: 95 | Upvalues: t (copy) ]]
+	local v1 = p1.Name .. "/" .. p2
+	local v2 = t[v1]
+
+	if v2 then
+		return v2
+	end
+
+	local v3 = p1:WaitForChild(p2, 10)
+
+	if v3 then
+		t[v1] = v3
+
+		return v3
+	end
+
+	warn("[AuctionBidding] Remote never appeared: " .. v1)
+
+	return nil
+end
+
+local t2 = {
+	Name = "AuctionBidding",
+	Type = "HUD"
+}
+local v1 = nil
+local v2 = nil
+local v3 = nil
+local v4 = nil
+local v5 = nil
+local v6 = nil
+local v7 = nil
+local v8 = nil
+local v9 = nil
+local v10 = nil
+local v11 = nil
+local v12 = nil
+local v13 = nil
+local v14 = nil
+local v15 = nil
+local v16 = nil
+local v17 = UDim2.fromScale(0.5, 0.5)
+local v18 = UDim2.fromScale(0.86, 0.72)
+local v19 = UDim2.fromScale(0.42, 0.5)
+local v20 = UDim2.fromScale(0.56, 0.72)
+local v21 = false
+local v22 = nil
+local v23 = false
+local v24 = false
+
+local function hideTutorialBidSpotlight(p1) --[[ hideTutorialBidSpotlight | Line: 180 | Upvalues: v23 (ref), v22 (ref) ]]
+	if p1 then
+		v23 = true
+	end
+
+	if not v22 then
+		return
+	end
+
+	local v1 = v22
+
+	v22 = nil
+	pcall(function() --[[ Line: 187 | Upvalues: v1 (copy) ]]
+		v1:Hide()
+		task.delay(0.3, function() --[[ Line: 189 | Upvalues: v1 (ref) ]]
+			pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+				v1:Destroy()
+			end)
+		end)
+	end)
+end
+
+local function showTutorialBidSpotlight() --[[ showTutorialBidSpotlight | Line: 195 | Upvalues: v22 (ref), v23 (ref), v1 (ref), Players (copy), SpotlightUI (copy) ]]
+	if v22 or (v23 or not v1) then
+		return
+	end
+
+	local LocalPlayer = Players.LocalPlayer
+
+	if not (LocalPlayer and LocalPlayer:GetAttribute("Tutorial")) then
+		return
+	end
+
+	local ok, result = pcall(function() --[[ Line: 204 | Upvalues: SpotlightUI (ref), v1 (ref) ]]
+		return SpotlightUI.new():SetShape("Square"):FocusUI(v1, 8):EnablePulse(8):Show()
+	end)
+
+	if ok then
+		v22 = result
+	else
+		warn("[Spotlight] BID-button spotlight failed:", result)
+	end
+end
+
+local function scheduleTutorialBidSpotlight() --[[ scheduleTutorialBidSpotlight | Line: 241 | Upvalues: v22 (ref), v23 (ref), v24 (ref), Players (copy), v21 (ref), v10 (ref), showTutorialBidSpotlight (copy) ]]
+	if v22 or v23 then
+		return
+	end
+
+	if v24 then
+		return
+	end
+
+	local LocalPlayer = Players.LocalPlayer
+
+	if LocalPlayer and LocalPlayer:GetAttribute("Tutorial") then
+		v24 = true
+		task.spawn(function() --[[ Line: 249 | Upvalues: v24 (ref), v21 (ref), v10 (ref), v23 (ref), showTutorialBidSpotlight (ref) ]]
+			task.wait(1)
+			v24 = false
+
+			if not v21 then
+				return
+			end
+
+			if not (v10 and v10.Visible) then
+				return
+			end
+
+			if not v23 then
+				showTutorialBidSpotlight()
+			end
+		end)
+	end
+end
+
+local v25 = nil
+local v26 = nil
+local v27 = false
+local v28 = nil
+local t3 = { 100, 1000, 10000 }
+
+local function baseZoneWidthForValue(p1) --[[ baseZoneWidthForValue | Line: 322 | Upvalues: t3 (copy) ]]
+	local v1 = 0.23
+
+	for i, v in ipairs(t3) do
+		if v <= p1 then
+			v1 = v1 * 0.85
+		end
+	end
+
+	return v1
+end
+
+local v29 = nil
+local v30 = 0
+local v31 = 1
+local v32 = 1
+local v33 = 0
+local v34 = 0.23
+local v35 = false
+local v36 = 4
+local v37 = nil
+local v38 = nil
+local v39 = false
+local v40 = nil
+local v41 = nil
+local t4 = {}
+local v42 = nil
+local v43 = nil
+local v44 = nil
+local v45 = Color3.fromRGB(0, 255, 100)
+local v46 = nil
+local v47 = nil
+local v48 = nil
+local v49 = nil
+local v50 = nil
+local v51 = 0
+local v52 = 0
+local v53 = 0
+local v54 = nil
+local v55 = nil
+local v56 = nil
+local v57 = nil
+local v58 = false
+local v59 = false
+local v60 = false
+local v61 = nil
+local v62 = 0
+local v63 = false
+local LocalPlayer = Players.LocalPlayer
+local t5 = {
+	{
+		Name = "Calculator",
+		Icon = "rbxassetid://96475905017650",
+		Attribute = "CalculatorPowers",
+		Sound = "Calculator",
+		ToastText = "Calculator activated",
+		Color = UIConfig.Colors.Accent.Success,
+		GamepadKey = Enum.KeyCode.DPadLeft
+	},
+	{
+		Name = "XRay Vision",
+		Icon = "rbxassetid://140184332600172",
+		Attribute = "XRayPowers",
+		Sound = "XRayScan",
+		ScanLine = true,
+		ToastText = "X-Ray Vision activated",
+		Color = UIConfig.Colors.Accent.Info,
+		GamepadKey = Enum.KeyCode.DPadDown
+	},
+	{
+		Name = "Kick",
+		Icon = "rbxassetid://72610031474649",
+		Attribute = "KickPowers",
+		Sound = "Punch",
+		DeferEffect = true,
+		ToastText = "Kicked a bidder!",
+		Color = UIConfig.Colors.Accent.Error,
+		GamepadKey = Enum.KeyCode.DPadRight
+	}
+}
+local t6 = {}
+local t7 = {}
+local t8 = {}
+local t9 = {}
+local t10 = {}
+local v64 = false
+
+local function repositionRows() --[[ repositionRows | Line: 417 | Upvalues: v1 (ref), v10 (ref) ]]
+	if not v1 then
+		return
+	end
+
+	if not v10 then
+		return
+	end
+
+	v10.AnchorPoint = Vector2.new(0.5, 0.5)
+	v10.Position = UDim2.fromScale(0.5, 0.34)
+	v10.Size = UDim2.fromScale(0.9, 0.24)
+end
+
+local function showFloatingResult(p1, p2, p3) --[[ showFloatingResult | Line: 435 | Upvalues: Players (copy), UIConfig (copy), Helpers (copy), TweenService (copy) ]]
+	local PlayerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+	if not PlayerGui then
+		return
+	end
+
+	local v1
+
+	if p3 then
+		v1 = p3
+	else
+		local CurrentCamera = workspace.CurrentCamera
+		local v2 = if CurrentCamera and CurrentCamera.ViewportSize.Y > 0 then CurrentCamera.ViewportSize.X / CurrentCamera.ViewportSize.Y or 1.7777777777777777 else 1.7777777777777777
+
+		v1 = UDim2.fromScale(0.5 + (math.random() - 0.5) * 0.14, 0.9 - 0.4 * v2 / 3.2323232323232327 * 1.09 - 0.05 + (math.random() - 0.5) * 0.03)
+	end
+
+	local v4 = (math.random() - 0.5) * 50
+	local v5 = v1 + UDim2.fromScale((math.random() - 0.5) * 0.16, -(0.07 + math.random() * 0.06))
+	local FloatingResult = Instance.new("ScreenGui")
+
+	FloatingResult.Name = "FloatingResult"
+	FloatingResult.ResetOnSpawn = false
+	FloatingResult.DisplayOrder = 20
+	FloatingResult.Parent = PlayerGui
+
+	local TextLabel = Instance.new("TextLabel")
+
+	TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	TextLabel.Position = v1
+	TextLabel.Size = UDim2.fromScale(0.2, 0.06)
+	TextLabel.BackgroundTransparency = 1
+	TextLabel.Text = p1
+	TextLabel.Font = UIConfig.Typography.Subheading.Font
+	TextLabel.TextScaled = true
+	TextLabel.TextColor3 = p2
+	TextLabel.TextTransparency = 0
+	TextLabel.Rotation = v4
+	TextLabel.ZIndex = 10
+	TextLabel.Parent = FloatingResult
+	Helpers.CreateTextStroke(TextLabel, UIConfig.Stroke.TextHeavy)
+	TextLabel.Size = UDim2.fromScale(0.1, 0.03)
+	TweenService:Create(TextLabel, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.fromScale(0.2, 0.06)
+	}):Play()
+	task.delay(0.35, function() --[[ Line: 492 | Upvalues: TextLabel (copy), TweenService (ref), v5 (copy), v4 (copy) ]]
+		if not TextLabel.Parent then
+			return
+		end
+
+		TweenService:Create(TextLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			TextTransparency = 1,
+			Position = v5,
+			Rotation = v4 + (math.random() - 0.5) * 30
+		}):Play()
+
+		local UIStroke = TextLabel:FindFirstChildOfClass("UIStroke")
+
+		if not UIStroke then
+			return
+		end
+
+		TweenService:Create(UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Transparency = 1
+		}):Play()
+	end)
+	game.Debris:AddItem(FloatingResult, 1.2)
+end
+
+local function randomizeBidZone() --[[ randomizeBidZone | Line: 515 | Upvalues: v33 (ref), v34 (ref), v12 (ref) ]]
+	v33 = math.random() * (1 - v34)
+
+	if not v12 then
+		return
+	end
+
+	v12.Position = UDim2.fromScale(v33, 0.5)
+end
+
+local function classifyCursor(p1) --[[ classifyCursor | Line: 527 | Upvalues: v33 (ref), v34 (ref) ]]
+	if not (if v33 <= p1 + 0.0075 then if p1 - 0.0075 <= v33 + v34 then true else false else false) then
+		return "miss"
+	end
+
+	if v34 * 0.38 * 0.5 >= math.abs(p1 - (v33 + v34 * 0.5)) then
+		return "perfect"
+	end
+
+	return "good"
+end
+
+local function findBorderStroke(p1) --[[ findBorderStroke | Line: 540 ]]
+	if not p1 then
+		return nil
+	end
+
+	for i, v in ipairs(p1:GetChildren()) do
+		if v:IsA("UIStroke") and v.ApplyStrokeMode == Enum.ApplyStrokeMode.Border then
+			return v
+		end
+	end
+
+	return nil
+end
+
+local function updateCursorStyle(p1) --[[ updateCursorStyle | Line: 553 | Upvalues: v13 (ref), v59 (ref), findBorderStroke (copy), v14 (ref), UIConfig (copy) ]]
+	if not v13 then
+		return
+	end
+
+	local Glow = v13:FindFirstChild("Glow")
+	local v1 = if v59 then nil else findBorderStroke(v14)
+
+	if p1 == "perfect" then
+		v13.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+
+		if Glow then
+			Glow.Color = Color3.fromRGB(255, 255, 255)
+			Glow.Thickness = 5
+			Glow.Transparency = 0.05
+		end
+
+		if v1 then
+			v1.Color = Color3.fromRGB(255, 255, 255)
+			v1.Thickness = 2
+			v1.Transparency = 0.1
+		end
+	elseif p1 == "good" then
+		v13.BackgroundColor3 = Color3.fromRGB(230, 255, 240)
+
+		if Glow then
+			Glow.Color = Color3.fromRGB(200, 255, 220)
+			Glow.Thickness = 3
+			Glow.Transparency = 0.2
+		end
+
+		if v1 then
+			v1.Color = Color3.fromRGB(220, 255, 225)
+			v1.Thickness = 1.5
+			v1.Transparency = 0.3
+		end
+	else
+		v13.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+
+		if Glow then
+			Glow.Color = Color3.fromRGB(255, 255, 255)
+			Glow.Thickness = 2
+			Glow.Transparency = 0.35
+		end
+
+		if not v1 then
+			return
+		end
+
+		v1.Color = UIConfig.Stroke.Card.Color
+		v1.Thickness = 1
+		v1.Transparency = UIConfig.Stroke.Card.Transparency
+	end
+end
+
+local function startSlider() --[[ startSlider | Line: 601 | Upvalues: v58 (ref), v30 (ref), v31 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), v29 (ref), RunService (copy), v32 (ref), v13 (ref), updateCursorStyle (copy) ]]
+	if v58 then
+		return
+	end
+
+	v30 = 0
+	v31 = 1
+	v35 = false
+	v33 = math.random() * (1 - v34)
+
+	if v12 then
+		v12.Position = UDim2.fromScale(v33, 0.5)
+	end
+
+	if v29 then
+		v29:Disconnect()
+		v29 = nil
+	end
+
+	v29 = RunService.Heartbeat:Connect(function(p1) --[[ Line: 616 | Upvalues: v30 (ref), v31 (ref), v32 (ref), v13 (ref), updateCursorStyle (ref), v33 (ref), v34 (ref) ]]
+		v30 = v30 + v31 * v32 * p1
+
+		if v30 >= 1 then
+			v30 = 1
+			v31 = -1
+		elseif v30 <= 0 then
+			v30 = 0
+			v31 = 1
+		end
+
+		if not v13 then
+			return
+		end
+
+		v13.Position = UDim2.fromScale(v30, 0.5)
+
+		local v2 = v30
+
+		updateCursorStyle(if if v33 <= v2 + 0.0075 then if v2 - 0.0075 <= v33 + v34 then true else false else false then if v34 * 0.38 * 0.5 >= math.abs(v2 - (v33 + v34 * 0.5)) then "perfect" else "good" else "miss")
+	end)
+end
+
+local function stopSlider() --[[ stopSlider | Line: 635 | Upvalues: v29 (ref) ]]
+	if not v29 then
+		return
+	end
+
+	v29:Disconnect()
+	v29 = nil
+end
+
+local function startBidBarPulse() --[[ startBidBarPulse | Line: 643 | Upvalues: v12 (ref), v50 (ref), TweenService (copy) ]]
+	if not v12 then
+		return
+	end
+
+	if v50 then
+		v50:Cancel()
+	end
+
+	v12.BackgroundTransparency = 0.1
+	v50 = TweenService:Create(v12, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+		BackgroundTransparency = 0.4
+	})
+	v50:Play()
+end
+
+local function stopBidBarPulse() --[[ stopBidBarPulse | Line: 655 | Upvalues: v49 (ref), v50 (ref) ]]
+	if v49 then
+		v49:Cancel()
+		v49 = nil
+	end
+
+	if not v50 then
+		return
+	end
+
+	v50:Cancel()
+	v50 = nil
+end
+
+local function findCashBundleForNextBid() --[[ findCashBundleForNextBid | Line: 660 | Upvalues: LocalPlayer (copy), v52 (ref), Monetisation (copy) ]]
+	local v1 = v52 - (LocalPlayer:GetAttribute("Cash") or 0)
+
+	if v1 <= 0 then
+		return nil
+	end
+
+	if Monetisation.GetAuctionCashBundleForAmount then
+		return Monetisation.GetAuctionCashBundleForAmount(v1)
+	end
+
+	return if Monetisation.GetCashBundleForAmount then Monetisation.GetCashBundleForAmount(v1) or nil else nil
+end
+
+local function setBorderStroke(p1) --[[ setBorderStroke | Line: 671 | Upvalues: findBorderStroke (copy), v14 (ref) ]]
+	local v1 = findBorderStroke(v14)
+
+	if v1 then
+		v1.Color = p1.Color
+		v1.Thickness = p1.Thickness
+		v1.Transparency = p1.Transparency
+		v1.ApplyStrokeMode = p1.ApplyStrokeMode
+		v1.LineJoinMode = p1.LineJoinMode
+	end
+end
+
+local function setBidTextLayoutForGlyph(p1) --[[ setBidTextLayoutForGlyph | Line: 681 | Upvalues: v15 (ref), v19 (copy), v20 (copy), v17 (copy), v18 (copy) ]]
+	if not v15 then
+		return
+	end
+
+	if p1 then
+		v15.Position = v19
+		v15.Size = v20
+	else
+		v15.Position = v17
+		v15.Size = v18
+	end
+end
+
+local function setLeaveTextLayoutForGlyph(p1) --[[ setLeaveTextLayoutForGlyph | Line: 693 | Upvalues: v26 (ref), v19 (copy), v20 (copy), v17 (copy), v18 (copy) ]]
+	if not v26 then
+		return
+	end
+
+	if p1 then
+		v26.Position = v19
+		v26.Size = v20
+	else
+		v26.Position = v17
+		v26.Size = v18
+	end
+end
+
+local function applyStandardBidButton(p1, p2) --[[ applyStandardBidButton | Line: 705 | Upvalues: v14 (ref), v59 (ref), v16 (ref), v21 (ref), v25 (ref), UIConfig (copy), v15 (ref), findBorderStroke (copy) ]]
+	if not v14 then
+		return
+	end
+
+	v59 = false
+
+	if v16 then
+		v16.Visible = false
+	end
+
+	if v21 and not (v25 and v25.Visible) then
+		v14.Visible = true
+	end
+
+	v14.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	v14.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+
+	if v15 then
+		v15.Text = p1
+		v15.TextColor3 = p2
+	else
+		v14.Text = p1
+		v14.TextColor3 = p2
+	end
+
+	local Card = UIConfig.Stroke.Card
+	local v1 = findBorderStroke(v14)
+
+	if v1 then
+		v1.Color = Card.Color
+		v1.Thickness = Card.Thickness
+		v1.Transparency = Card.Transparency
+		v1.ApplyStrokeMode = Card.ApplyStrokeMode
+		v1.LineJoinMode = Card.LineJoinMode
+	end
+end
+
+local function showCashRobuxButton(p1) --[[ showCashRobuxButton | Line: 724 | Upvalues: v59 (ref), v14 (ref), v16 (ref), UIConfig (copy), Helpers (copy), v21 (ref), v25 (ref) ]]
+	v59 = true
+
+	if v14 then
+		v14.Visible = false
+	end
+
+	if not v16 then
+		return
+	end
+
+	v16.Text = "BUY CASH  " .. UIConfig.Icons.Robux .. " " .. Helpers.FormatNumber(p1.PriceInRobux or 0)
+
+	local v2 = v21
+
+	if v2 then
+		v2 = not (v25 and v25.Visible)
+	end
+
+	v16.Visible = v2
+end
+
+local function updateBidButtonAffordance() --[[ updateBidButtonAffordance | Line: 733 | Upvalues: v14 (ref), v25 (ref), v16 (ref), v10 (ref), v58 (ref), LocalPlayer (copy), v52 (ref), Monetisation (copy), v59 (ref), UIConfig (copy), Helpers (copy), v21 (ref), v35 (ref), applyStandardBidButton (copy) ]]
+	if not v14 then
+		return
+	end
+
+	if v25 and v25.Visible then
+		v14.Visible = false
+
+		if not v16 then
+			return
+		end
+
+		v16.Visible = false
+	else
+		if v10 and not v10.Visible then
+			return
+		end
+
+		if v58 then
+			return
+		end
+
+		local v1 = v52 - (LocalPlayer:GetAttribute("Cash") or 0)
+		local v2
+
+		if v1 <= 0 then
+			v2 = nil
+		elseif Monetisation.GetAuctionCashBundleForAmount then
+			v2 = Monetisation.GetAuctionCashBundleForAmount(v1)
+		elseif Monetisation.GetCashBundleForAmount then
+			local v4 = Monetisation.GetCashBundleForAmount(v1)
+
+			v2 = if v4 then v4 else nil
+		else
+			v2 = nil
+		end
+
+		if v2 then
+			v59 = true
+
+			if v14 then
+				v14.Visible = false
+			end
+
+			if not v16 then
+				return
+			end
+
+			v16.Text = "BUY CASH  " .. UIConfig.Icons.Robux .. " " .. Helpers.FormatNumber(v2.PriceInRobux or 0)
+
+			local v6 = v21
+
+			if v6 then
+				v6 = not (v25 and v25.Visible)
+			end
+
+			v16.Visible = v6
+		else
+			if not v35 then
+				applyStandardBidButton("BID", UIConfig.Colors.Accent.Success)
+
+				return
+			end
+
+			v59 = false
+
+			if v16 then
+				v16.Visible = false
+			end
+
+			if not v21 then
+				return
+			end
+
+			v14.Visible = true
+		end
+	end
+end
+
+local function formatPauseClock(p1) --[[ formatPauseClock | Line: 759 ]]
+	local v2 = math.max(0, (math.ceil(p1)))
+
+	return string.format("%d:%02d", math.floor(v2 / 60), v2 % 60)
+end
+
+local function stopPauseCountdown() --[[ stopPauseCountdown | Line: 764 | Upvalues: v57 (ref) ]]
+	if not v57 then
+		return
+	end
+
+	v57:Disconnect()
+	v57 = nil
+end
+
+local function startPauseCountdown(p1) --[[ startPauseCountdown | Line: 775 | Upvalues: v57 (ref), v56 (ref), RunService (copy) ]]
+	if v57 then
+		v57:Disconnect()
+		v57 = nil
+	end
+
+	if not v56 then
+		return
+	end
+
+	local v1 = tick()
+	local v3 = v1 + math.max(0, tonumber(p1) or 120)
+	local v4 = nil
+
+	local function render() --[[ render | Line: 780 | Upvalues: v3 (copy), v4 (ref), v56 (ref) ]]
+		local v32 = math.max(0, (math.ceil(v3 - tick())))
+
+		if v32 == v4 then
+			return
+		end
+
+		v4 = v32
+
+		local v6 = math.max(0, (math.ceil(v32)))
+
+		v56.Text = string.format("%d:%02d", math.floor(v6 / 60), v6 % 60)
+	end
+
+	local v7 = math.max(0, (math.ceil(v3 - tick())))
+
+	if v7 ~= v4 then
+		v4 = v7
+
+		local v10 = math.max(0, (math.ceil(v7)))
+
+		v56.Text = string.format("%d:%02d", math.floor(v10 / 60), v10 % 60)
+	end
+
+	v57 = RunService.Heartbeat:Connect(function() --[[ Line: 788 | Upvalues: v3 (copy), v4 (ref), v56 (ref), v57 (ref) ]]
+		local v32 = math.max(0, (math.ceil(v3 - tick())))
+
+		if v32 ~= v4 then
+			v4 = v32
+
+			local v6 = math.max(0, (math.ceil(v32)))
+
+			v56.Text = string.format("%d:%02d", math.floor(v6 / 60), v6 % 60)
+		end
+
+		if not (v3 <= tick() and v57) then
+			return
+		end
+
+		v57:Disconnect()
+		v57 = nil
+	end)
+end
+
+local function createPauseOverlay() --[[ createPauseOverlay | Line: 796 | Upvalues: v1 (ref), Helpers (copy), UIConfig (copy), v56 (ref), v55 (ref) ]]
+	local PauseOverlay = Instance.new("Frame")
+
+	PauseOverlay.Name = "PauseOverlay"
+	PauseOverlay.Size = UDim2.fromScale(1, 1)
+	PauseOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	PauseOverlay.BackgroundTransparency = 0.38
+	PauseOverlay.BorderSizePixel = 0
+	PauseOverlay.Visible = false
+	PauseOverlay.ZIndex = 30
+	PauseOverlay.Parent = v1
+	Helpers.CreateCorner(PauseOverlay, UIConfig.Corners.Panel)
+
+	local PauseTitle = Instance.new("TextLabel")
+
+	PauseTitle.Name = "PauseTitle"
+	PauseTitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	PauseTitle.Position = UDim2.fromScale(0.5, 0.26)
+	PauseTitle.Size = UDim2.fromScale(0.86, 0.2)
+	PauseTitle.BackgroundTransparency = 1
+	PauseTitle.Text = "AUCTION PAUSED"
+	PauseTitle.TextColor3 = UIConfig.Colors.Robux.FillCenter
+	PauseTitle.TextScaled = true
+	PauseTitle.Font = UIConfig.Typography.Heading.Font
+	PauseTitle.ZIndex = 31
+	PauseTitle.Parent = PauseOverlay
+	Helpers.CreateTextStroke(PauseTitle, UIConfig.Stroke.TextHeavy)
+	v56 = Instance.new("TextLabel")
+	v56.Name = "PauseTimer"
+	v56.AnchorPoint = Vector2.new(0.5, 0.5)
+	v56.Position = UDim2.fromScale(0.5, 0.54)
+	v56.Size = UDim2.fromScale(0.6, 0.34)
+	v56.BackgroundTransparency = 1
+
+	local v3 = math.max(0, (math.ceil(120)))
+
+	v56.Text = string.format("%d:%02d", math.floor(v3 / 60), v3 % 60)
+	v56.TextColor3 = UIConfig.Colors.Text.Primary
+	v56.TextScaled = true
+	v56.TextWrapped = true
+	v56.Font = UIConfig.Typography.Heading.Font
+	v56.ZIndex = 31
+	v56.Parent = PauseOverlay
+	Helpers.CreateTextStroke(v56, UIConfig.Stroke.TextHeavy)
+	v55 = Instance.new("TextLabel")
+	v55.Name = "PauseStatus"
+	v55.AnchorPoint = Vector2.new(0.5, 0.5)
+	v55.Position = UDim2.fromScale(0.5, 0.83)
+	v55.Size = UDim2.fromScale(0.78, 0.14)
+	v55.BackgroundTransparency = 1
+	v55.Text = "Cash purchase open"
+	v55.TextColor3 = UIConfig.Colors.Text.Primary
+	v55.TextScaled = true
+	v55.Font = UIConfig.Typography.Body.Font
+	v55.ZIndex = 31
+	v55.Parent = PauseOverlay
+	Helpers.CreateTextStroke(v55, UIConfig.Stroke.Text)
+
+	return PauseOverlay
+end
+
+local function setPausedVisual(p1, p2, p3) --[[ setPausedVisual | Line: 855 | Upvalues: v58 (ref), v29 (ref), v49 (ref), v50 (ref), v54 (ref), v1 (ref), createPauseOverlay (copy), v55 (ref), startPauseCountdown (copy), v57 (ref), updateBidButtonAffordance (copy), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy) ]]
+	v58 = p1
+
+	if p1 then
+		if v29 then
+			v29:Disconnect()
+			v29 = nil
+		end
+
+		if v49 then
+			v49:Cancel()
+			v49 = nil
+		end
+
+		if v50 then
+			v50:Cancel()
+			v50 = nil
+		end
+
+		if not v54 and v1 then
+			v54 = createPauseOverlay()
+		end
+
+		if v54 then
+			v54.Visible = true
+		end
+
+		if v55 then
+			v55.Text = "Cash purchase open"
+		end
+
+		startPauseCountdown(p3)
+	else
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if p2 == false or (not v21 or (not v10 or (not v10.Visible or v35))) then
+			return
+		end
+
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+	end
+end
+
+local function releaseCashPurchasePause() --[[ releaseCashPurchasePause | Line: 885 | Upvalues: v60 (ref), v61 (ref), v63 (ref), v62 (ref), Auction (copy), t (copy), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (copy), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy) ]]
+	if not v60 then
+		return
+	end
+
+	v60 = false
+	v61 = nil
+	v63 = false
+	v62 = v62 + 1
+
+	local v1 = Auction
+	local v2 = v1.Name .. "/RequestAuctionPause"
+	local v3 = t[v2]
+	local v4
+
+	if v3 then
+		v4 = v3
+	else
+		local RequestAuctionPause = v1:WaitForChild("RequestAuctionPause", 10)
+
+		if RequestAuctionPause then
+			t[v2] = RequestAuctionPause
+			v4 = RequestAuctionPause
+		else
+			warn("[AuctionBidding] Remote never appeared: " .. v2)
+			v4 = nil
+		end
+	end
+
+	if v4 then
+		v4:FireServer(false)
+	end
+
+	v58 = false
+
+	if v57 then
+		v57:Disconnect()
+		v57 = nil
+	end
+
+	if v54 then
+		v54.Visible = false
+	end
+
+	updateBidButtonAffordance()
+
+	if not v21 or (not v10 or (not v10.Visible or v35)) then
+		return
+	end
+
+	v33 = math.random() * (1 - v34)
+
+	if v12 then
+		v12.Position = UDim2.fromScale(v33, 0.5)
+	end
+
+	startSlider()
+	startBidBarPulse()
+end
+
+local function tryAutoBidAfterCashPurchase() --[[ tryAutoBidAfterCashPurchase | Line: 896 | Upvalues: v63 (ref), v60 (ref), v21 (ref), v25 (ref), v10 (ref), v61 (ref), v62 (ref), Auction (copy), t (copy), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (copy), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), LocalPlayer (copy), v52 (ref), v23 (ref), v22 (ref) ]]
+	if not (v63 and v60) then
+		return
+	end
+
+	if v21 and not (v25 and v25.Visible) and (not v10 or v10.Visible) then
+		if v52 <= 0 or (LocalPlayer:GetAttribute("Cash") or 0) < v52 then
+			return
+		end
+
+		if not v60 then
+			task.defer(function() --[[ Line: 913 | Upvalues: v21 (ref), v25 (ref), v10 (ref), Auction (ref), t (ref), v23 (ref), v22 (ref) ]]
+				if not v21 or v25 and v25.Visible or v10 and not v10.Visible then
+					return
+				end
+
+				local v1 = Auction
+				local v2 = v1.Name .. "/Bid"
+				local v3 = t[v2]
+				local v4
+
+				if v3 then
+					v4 = v3
+				else
+					local Bid = v1:WaitForChild("Bid", 10)
+
+					if Bid then
+						t[v2] = Bid
+						v4 = Bid
+					else
+						warn("[AuctionBidding] Remote never appeared: " .. v2)
+						v4 = nil
+					end
+				end
+
+				if v4 then
+					v4:FireServer()
+				end
+
+				v23 = true
+
+				if not v22 then
+					return
+				end
+
+				local v5 = v22
+
+				v22 = nil
+				pcall(function() --[[ Line: 187 | Upvalues: v5 (copy) ]]
+					v5:Hide()
+					task.delay(0.3, function() --[[ Line: 189 | Upvalues: v5 (ref) ]]
+						pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+							v1:Destroy()
+						end)
+					end)
+				end)
+			end)
+
+			return
+		end
+
+		v60 = false
+		v61 = nil
+		v63 = false
+		v62 = v62 + 1
+
+		local v1 = Auction
+		local v2 = v1.Name .. "/RequestAuctionPause"
+		local v3 = t[v2]
+		local v4
+
+		if v3 then
+			v4 = v3
+		else
+			local RequestAuctionPause = v1:WaitForChild("RequestAuctionPause", 10)
+
+			if RequestAuctionPause then
+				t[v2] = RequestAuctionPause
+				v4 = RequestAuctionPause
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v2)
+				v4 = nil
+			end
+		end
+
+		if v4 then
+			v4:FireServer(false)
+		end
+
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if not v21 or (not v10 or (not v10.Visible or v35)) then
+			task.defer(function() --[[ Line: 913 | Upvalues: v21 (ref), v25 (ref), v10 (ref), Auction (ref), t (ref), v23 (ref), v22 (ref) ]]
+				if not v21 or v25 and v25.Visible or v10 and not v10.Visible then
+					return
+				end
+
+				local v1 = Auction
+				local v2 = v1.Name .. "/Bid"
+				local v3 = t[v2]
+				local v4
+
+				if v3 then
+					v4 = v3
+				else
+					local Bid = v1:WaitForChild("Bid", 10)
+
+					if Bid then
+						t[v2] = Bid
+						v4 = Bid
+					else
+						warn("[AuctionBidding] Remote never appeared: " .. v2)
+						v4 = nil
+					end
+				end
+
+				if v4 then
+					v4:FireServer()
+				end
+
+				v23 = true
+
+				if not v22 then
+					return
+				end
+
+				local v5 = v22
+
+				v22 = nil
+				pcall(function() --[[ Line: 187 | Upvalues: v5 (copy) ]]
+					v5:Hide()
+					task.delay(0.3, function() --[[ Line: 189 | Upvalues: v5 (ref) ]]
+						pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+							v1:Destroy()
+						end)
+					end)
+				end)
+			end)
+
+			return
+		end
+
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+		task.defer(function() --[[ Line: 913 | Upvalues: v21 (ref), v25 (ref), v10 (ref), Auction (ref), t (ref), v23 (ref), v22 (ref) ]]
+			if not v21 or v25 and v25.Visible or v10 and not v10.Visible then
+				return
+			end
+
+			local v1 = Auction
+			local v2 = v1.Name .. "/Bid"
+			local v3 = t[v2]
+			local v4
+
+			if v3 then
+				v4 = v3
+			else
+				local Bid = v1:WaitForChild("Bid", 10)
+
+				if Bid then
+					t[v2] = Bid
+					v4 = Bid
+				else
+					warn("[AuctionBidding] Remote never appeared: " .. v2)
+					v4 = nil
+				end
+			end
+
+			if v4 then
+				v4:FireServer()
+			end
+
+			v23 = true
+
+			if not v22 then
+				return
+			end
+
+			local v5 = v22
+
+			v22 = nil
+			pcall(function() --[[ Line: 187 | Upvalues: v5 (copy) ]]
+				v5:Hide()
+				task.delay(0.3, function() --[[ Line: 189 | Upvalues: v5 (ref) ]]
+					pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+						v1:Destroy()
+					end)
+				end)
+			end)
+		end)
+	else
+		if not v60 then
+			return
+		end
+
+		v60 = false
+		v61 = nil
+		v63 = false
+		v62 = v62 + 1
+
+		local v5 = Auction
+		local v6 = v5.Name .. "/RequestAuctionPause"
+		local v7 = t[v6]
+		local v8
+
+		if v7 then
+			v8 = v7
+		else
+			local RequestAuctionPause = v5:WaitForChild("RequestAuctionPause", 10)
+
+			if RequestAuctionPause then
+				t[v6] = RequestAuctionPause
+				v8 = RequestAuctionPause
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v6)
+				v8 = nil
+			end
+		end
+
+		if v8 then
+			v8:FireServer(false)
+		end
+
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if not v21 or (not v10 or (not v10.Visible or v35)) then
+			return
+		end
+
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+	end
+end
+
+local function promptCashForBid(p1) --[[ promptCashForBid | Line: 927 | Upvalues: v60 (ref), showFloatingResult (copy), UIConfig (copy), v61 (ref), v63 (ref), v62 (ref), UIClick (copy), Shop (copy), t (copy), Auction (copy), v58 (ref), v29 (ref), v49 (ref), v50 (ref), v54 (ref), v1 (ref), createPauseOverlay (copy), v55 (ref), startPauseCountdown (copy), MarketplaceService (copy), LocalPlayer (copy), v57 (ref), updateBidButtonAffordance (copy), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy) ]]
+	if v60 then
+		return
+	end
+
+	local v2 = tonumber(p1 and p1.ProductId)
+
+	if not v2 or v2 <= 0 then
+		showFloatingResult("Cash products coming soon!", UIConfig.Colors.Accent.Warning)
+
+		return
+	end
+
+	v60 = true
+	v61 = v2
+	v63 = false
+	v62 = v62 + 1
+
+	local v3 = v62
+
+	UIClick:Play()
+
+	local v4 = Shop
+	local v5 = v4.Name .. "/SetGiftTarget"
+	local v6 = t[v5]
+	local v7
+
+	if v6 then
+		v7 = v6
+	else
+		local SetGiftTarget = v4:WaitForChild("SetGiftTarget", 10)
+
+		if SetGiftTarget then
+			t[v5] = SetGiftTarget
+			v7 = SetGiftTarget
+		else
+			warn("[AuctionBidding] Remote never appeared: " .. v5)
+			v7 = nil
+		end
+	end
+
+	if v7 then
+		v7:FireServer(nil)
+	end
+
+	local v8 = Auction
+	local v9 = v8.Name .. "/RequestAuctionPause"
+	local v102 = t[v9]
+	local v11
+
+	if v102 then
+		v11 = v102
+	else
+		local RequestAuctionPause = v8:WaitForChild("RequestAuctionPause", 10)
+
+		if RequestAuctionPause then
+			t[v9] = RequestAuctionPause
+			v11 = RequestAuctionPause
+		else
+			warn("[AuctionBidding] Remote never appeared: " .. v9)
+			v11 = nil
+		end
+	end
+
+	if v11 then
+		v11:FireServer(true)
+	end
+
+	v58 = true
+
+	if v29 then
+		v29:Disconnect()
+		v29 = nil
+	end
+
+	if v49 then
+		v49:Cancel()
+		v49 = nil
+	end
+
+	if v50 then
+		v50:Cancel()
+		v50 = nil
+	end
+
+	if not v54 and v1 then
+		v54 = createPauseOverlay()
+	end
+
+	if v54 then
+		v54.Visible = true
+	end
+
+	if v55 then
+		v55.Text = "Cash purchase open"
+	end
+
+	startPauseCountdown(120)
+
+	local ok, result = pcall(function() --[[ Line: 948 | Upvalues: MarketplaceService (ref), LocalPlayer (ref), v2 (copy) ]]
+		MarketplaceService:PromptProductPurchase(LocalPlayer, v2)
+	end)
+
+	if ok then
+		task.delay(120, function() --[[ Line: 958 | Upvalues: v60 (ref), v62 (ref), v3 (copy), v61 (ref), v63 (ref), Auction (ref), t (ref), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (ref), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref) ]]
+			if not v60 or v62 ~= v3 then
+				return
+			end
+
+			if not v60 then
+				return
+			end
+
+			v60 = false
+			v61 = nil
+			v63 = false
+			v62 = v62 + 1
+
+			local v1 = Auction
+			local v2 = v1.Name .. "/RequestAuctionPause"
+			local v32 = t[v2]
+			local v4
+
+			if v32 then
+				v4 = v32
+			else
+				local RequestAuctionPause = v1:WaitForChild("RequestAuctionPause", 10)
+
+				if RequestAuctionPause then
+					t[v2] = RequestAuctionPause
+					v4 = RequestAuctionPause
+				else
+					warn("[AuctionBidding] Remote never appeared: " .. v2)
+					v4 = nil
+				end
+			end
+
+			if v4 then
+				v4:FireServer(false)
+			end
+
+			v58 = false
+
+			if v57 then
+				v57:Disconnect()
+				v57 = nil
+			end
+
+			if v54 then
+				v54.Visible = false
+			end
+
+			updateBidButtonAffordance()
+
+			if not v21 or (not v10 or (not v10.Visible or v35)) then
+				return
+			end
+
+			v33 = math.random() * (1 - v34)
+
+			if v12 then
+				v12.Position = UDim2.fromScale(v33, 0.5)
+			end
+
+			startSlider()
+			startBidBarPulse()
+		end)
+
+		return
+	end
+
+	warn("[AuctionBidding] Failed to open cash product prompt:", result)
+
+	if v60 then
+		v60 = false
+		v61 = nil
+		v63 = false
+		v62 = v62 + 1
+
+		local v122 = Auction
+		local v132 = v122.Name .. "/RequestAuctionPause"
+		local v14 = t[v132]
+		local v15
+
+		if v14 then
+			v15 = v14
+		else
+			local RequestAuctionPause = v122:WaitForChild("RequestAuctionPause", 10)
+
+			if RequestAuctionPause then
+				t[v132] = RequestAuctionPause
+				v15 = RequestAuctionPause
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v132)
+				v15 = nil
+			end
+		end
+
+		if v15 then
+			v15:FireServer(false)
+		end
+
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if v21 and (v10 and (v10.Visible and not v35)) then
+			v33 = math.random() * (1 - v34)
+
+			if v12 then
+				v12.Position = UDim2.fromScale(v33, 0.5)
+			end
+
+			startSlider()
+			startBidBarPulse()
+		end
+	end
+
+	showFloatingResult("Could not open Robux prompt", UIConfig.Colors.Accent.Error)
+end
+
+local v65 = nil
+
+local function showInsufficientDiamonds(p1) --[[ showInsufficientDiamonds | Line: 971 | Upvalues: v65 (ref), v8 (ref), Helpers (copy), ReplicatedStorage (copy) ]]
+	if not v65 and v8 then
+		v65 = Helpers.CreateInsufficientCurrencyPrompt(v8, {
+			Currency = "Diamonds",
+			OnConfirm = function() --[[ OnConfirm | Line: 975 | Upvalues: ReplicatedStorage (ref) ]]
+				require(ReplicatedStorage.Modules.UIController):Open("Shop", "DiamondBundlesSection")
+			end
+		})
+	end
+
+	if not v65 then
+		return
+	end
+
+	v65.Show(p1)
+end
+
+local function showBuyPowerPrompt(p1) --[[ showBuyPowerPrompt | Line: 986 | Upvalues: GameConfig (copy), Players (copy), UIConfig (copy), Helpers (copy), UIClick (copy), LocalPlayer (copy), showInsufficientDiamonds (copy), Auction (copy) ]]
+	local v1 = GameConfig.AuctionPowers and GameConfig.AuctionPowers.BuyCost
+	local v2 = v1 and v1[p1.Attribute]
+
+	if not v2 then
+		return
+	end
+
+	local PlayerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+	if PlayerGui then
+		local BuyPowerPrompt = Instance.new("ScreenGui")
+
+		BuyPowerPrompt.Name = "BuyPowerPrompt"
+		BuyPowerPrompt.ResetOnSpawn = false
+		BuyPowerPrompt.IgnoreGuiInset = true
+		BuyPowerPrompt.DisplayOrder = 60
+		BuyPowerPrompt.Parent = PlayerGui
+
+		local function close() --[[ close | Line: 1001 | Upvalues: BuyPowerPrompt (copy) ]]
+			BuyPowerPrompt:Destroy()
+		end
+
+		local TextButton = Instance.new("TextButton")
+
+		TextButton.Size = UDim2.fromScale(1, 1)
+		TextButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		TextButton.BackgroundTransparency = 0.4
+		TextButton.BorderSizePixel = 0
+		TextButton.AutoButtonColor = false
+		TextButton.Text = ""
+		TextButton.Parent = BuyPowerPrompt
+		TextButton.MouseButton1Click:Connect(close)
+
+		local Frame = Instance.new("Frame")
+
+		Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+		Frame.Position = UDim2.fromScale(0.5, 0.5)
+		Frame.Size = UDim2.fromScale(0.34, 0.3)
+		Frame.BackgroundColor3 = UIConfig.Colors.Panel.Background
+		Frame.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+		Frame.BorderSizePixel = 0
+		Frame.Active = true
+		Frame.Parent = BuyPowerPrompt
+		Helpers.CreateCorner(Frame, UIConfig.Corners.Panel)
+		Helpers.CreateScaledStroke(Frame, UIConfig.Stroke.Panel)
+
+		local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+
+		UIAspectRatioConstraint.AspectRatio = 1.6
+		UIAspectRatioConstraint.DominantAxis = Enum.DominantAxis.Width
+		UIAspectRatioConstraint.Parent = Frame
+
+		local TextLabel = Instance.new("TextLabel")
+
+		TextLabel.AnchorPoint = Vector2.new(0.5, 0)
+		TextLabel.Position = UDim2.fromScale(0.5, 0.14)
+		TextLabel.Size = UDim2.fromScale(0.9, 0.2)
+		TextLabel.BackgroundTransparency = 1
+		TextLabel.Text = "Buy " .. tostring(p1.Name) .. "?"
+		TextLabel.Font = UIConfig.Typography.Heading.Font
+		TextLabel.TextScaled = true
+		TextLabel.TextColor3 = UIConfig.Colors.Text.Primary
+		TextLabel.Parent = Frame
+		Helpers.CreateTextStroke(TextLabel, UIConfig.Stroke.Text)
+
+		local TextLabel2 = Instance.new("TextLabel")
+
+		TextLabel2.AnchorPoint = Vector2.new(0.5, 0)
+		TextLabel2.Position = UDim2.fromScale(0.5, 0.4)
+		TextLabel2.Size = UDim2.fromScale(0.86, 0.14)
+		TextLabel2.BackgroundTransparency = 1
+		TextLabel2.Text = "You have none left."
+		TextLabel2.Font = UIConfig.Typography.Body.Font
+		TextLabel2.TextScaled = true
+		TextLabel2.TextColor3 = UIConfig.Colors.Text.Secondary
+		TextLabel2.Parent = Frame
+		Helpers.CreateTextStroke(TextLabel2, UIConfig.Stroke.Text)
+
+		local v4 = Helpers.CreateDiamondButton(Frame, v2, "BUY")
+
+		v4.AnchorPoint = Vector2.new(1, 1)
+		v4.Position = UDim2.fromScale(0.95, 0.88)
+		v4.Size = UDim2.fromScale(0.42, 0.26)
+
+		local TextButton2 = Instance.new("TextButton")
+
+		TextButton2.AnchorPoint = Vector2.new(0, 1)
+		TextButton2.Position = UDim2.fromScale(0.05, 0.88)
+		TextButton2.Size = UDim2.fromScale(0.42, 0.26)
+		TextButton2.BackgroundColor3 = UIConfig.Colors.Panel.Surface
+		TextButton2.BackgroundTransparency = 0.1
+		TextButton2.BorderSizePixel = 0
+		TextButton2.AutoButtonColor = false
+		TextButton2.Text = "Cancel"
+		TextButton2.Font = UIConfig.Typography.Subheading.Font
+		TextButton2.TextScaled = true
+		TextButton2.TextColor3 = UIConfig.Colors.Accent.Error
+		TextButton2.Parent = Frame
+		Helpers.CreateCorner(TextButton2, UIConfig.Corners.Button)
+
+		local v5 = Helpers.CreateScaledStroke(TextButton2, UIConfig.Stroke.Card)
+
+		v5.Color = UIConfig.Colors.Accent.Error
+		v5.Transparency = 0.35
+		Helpers.CreateTextStroke(TextButton2, UIConfig.Stroke.Text)
+
+		local UIPadding = Instance.new("UIPadding")
+
+		UIPadding.PaddingTop = UDim.new(0.2, 0)
+		UIPadding.PaddingBottom = UDim.new(0.2, 0)
+		UIPadding.Parent = TextButton2
+		TextButton2.MouseButton1Click:Connect(function() --[[ Line: 1092 | Upvalues: UIClick (ref), BuyPowerPrompt (copy) ]]
+			UIClick:Play()
+			BuyPowerPrompt:Destroy()
+		end)
+		v4.MouseButton1Click:Connect(function() --[[ Line: 1097 | Upvalues: LocalPlayer (ref), v2 (copy), BuyPowerPrompt (copy), showInsufficientDiamonds (ref), UIClick (ref), Auction (ref), p1 (copy), Helpers (ref), v4 (copy) ]]
+			if (LocalPlayer:GetAttribute("Diamonds") or 0) < v2 then
+				BuyPowerPrompt:Destroy()
+			else
+				UIClick:Play()
+
+				local BuyPower = Auction:FindFirstChild("BuyPower")
+
+				if not BuyPower then
+					BuyPowerPrompt:Destroy()
+
+					return
+				end
+
+				local ok, result, result2 = pcall(function() --[[ Line: 1107 | Upvalues: BuyPower (copy), p1 (ref) ]]
+					return BuyPower:InvokeServer(p1.Attribute)
+				end)
+
+				if ok and result then
+					Helpers.SpawnDiamondBurst(v4)
+					BuyPowerPrompt:Destroy()
+
+					return
+				end
+
+				BuyPowerPrompt:Destroy()
+
+				if result2 ~= "Not enough diamonds" then
+					return
+				end
+			end
+
+			showInsufficientDiamonds(v2)
+		end)
+	end
+end
+
+local function playXRayScan() --[[ playXRayScan | Line: 1125 | Upvalues: Players (copy), TweenService (copy) ]]
+	local PlayerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+	if PlayerGui then
+		local XRayScanGui = Instance.new("ScreenGui")
+
+		XRayScanGui.Name = "XRayScanGui"
+		XRayScanGui.ResetOnSpawn = false
+		XRayScanGui.IgnoreGuiInset = true
+		XRayScanGui.DisplayOrder = 56
+		XRayScanGui.Parent = PlayerGui
+
+		local ScanBeam = Instance.new("Frame")
+
+		ScanBeam.Name = "ScanBeam"
+		ScanBeam.AnchorPoint = Vector2.new(0.5, 0.5)
+		ScanBeam.Position = UDim2.fromScale(-0.07, 0.5)
+		ScanBeam.Size = UDim2.fromScale(0.1, 1)
+		ScanBeam.BackgroundColor3 = Color3.fromRGB(80, 175, 255)
+		ScanBeam.BackgroundTransparency = 0.45
+		ScanBeam.BorderSizePixel = 0
+		ScanBeam.Parent = XRayScanGui
+
+		local UIGradient = Instance.new("UIGradient")
+
+		UIGradient.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0), NumberSequenceKeypoint.new(1, 1) })
+		UIGradient.Parent = ScanBeam
+
+		local ScanCore = Instance.new("Frame")
+
+		ScanCore.Name = "ScanCore"
+		ScanCore.AnchorPoint = Vector2.new(0.5, 0.5)
+		ScanCore.Position = UDim2.fromScale(0.5, 0.5)
+		ScanCore.Size = UDim2.fromScale(0.16, 1)
+		ScanCore.BackgroundColor3 = Color3.fromRGB(225, 245, 255)
+		ScanCore.BackgroundTransparency = 0.05
+		ScanCore.BorderSizePixel = 0
+		ScanCore.Parent = ScanBeam
+
+		local v1 = TweenService:Create(ScanBeam, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+			Position = UDim2.fromScale(1.07, 0.5)
+		})
+
+		v1:Play()
+		v1.Completed:Once(function() --[[ Line: 1171 | Upvalues: XRayScanGui (copy), TweenService (ref), ScanBeam (copy) ]]
+			if XRayScanGui.Parent then
+				local v1 = TweenService:Create(ScanBeam, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+					Position = UDim2.fromScale(-0.07, 0.5)
+				})
+
+				v1:Play()
+				v1.Completed:Once(function() --[[ Line: 1177 | Upvalues: XRayScanGui (ref) ]]
+					if not XRayScanGui.Parent then
+						return
+					end
+
+					XRayScanGui:Destroy()
+				end)
+			end
+		end)
+		game.Debris:AddItem(XRayScanGui, 2)
+	end
+end
+
+local function playPowerUseEffect(p1, p2) --[[ playPowerUseEffect | Line: 1187 | Upvalues: UIConfig (copy), ReplicatedStorage (copy), showFloatingResult (copy), Sounds (copy), SoundService (copy), playXRayScan (copy), TweenService (copy), Players (copy) ]]
+	local v1 = p2 and p2.Color or UIConfig.Colors.Accent.Primary
+	local ok, result = pcall(require, ReplicatedStorage.Modules.Screens.Toasts)
+
+	if ok and result then
+		result:Show(p2 and p2.ToastText or "Power activated", v1, 2.5, true)
+	end
+
+	showFloatingResult(p2 and p2.Name and string.upper(p2.Name) or "POWER", v1, UDim2.fromScale(0.5, 0.4))
+
+	local v5 = Sounds:FindFirstChild(p2 and p2.Sound or "PowerUse")
+
+	if v5 and (v5:IsA("Sound") and v5) then
+		local v6 = v5:Clone()
+
+		v6.Parent = SoundService
+		v6:Play()
+		v6.Ended:Connect(function() --[[ Line: 66 | Upvalues: v6 (copy) ]]
+			v6:Destroy()
+		end)
+	end
+
+	if p2 and p2.ScanLine then
+		playXRayScan()
+	end
+
+	if p1 then
+		local v7 = p1:FindFirstChildWhichIsA("UIStroke")
+
+		if v7 then
+			v7.Color = v1
+			v7.Transparency = 0
+			TweenService:Create(v7, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = UIConfig.Stroke.Card.Transparency,
+				Color = UIConfig.Stroke.Card.Color
+			}):Play()
+		end
+	end
+
+	local PlayerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+	if PlayerGui then
+		local PowerUseFlash = Instance.new("ScreenGui")
+
+		PowerUseFlash.Name = "PowerUseFlash"
+		PowerUseFlash.ResetOnSpawn = false
+		PowerUseFlash.IgnoreGuiInset = true
+		PowerUseFlash.DisplayOrder = 55
+		PowerUseFlash.Parent = PlayerGui
+
+		local Frame = Instance.new("Frame")
+
+		Frame.Size = UDim2.fromScale(1, 1)
+		Frame.BackgroundColor3 = v1
+		Frame.BackgroundTransparency = 0.8
+		Frame.BorderSizePixel = 0
+		Frame.Parent = PowerUseFlash
+		TweenService:Create(Frame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 1
+		}):Play()
+		game.Debris:AddItem(PowerUseFlash, 0.7)
+	end
+end
+
+local function activatePower(p1, p2) --[[ activatePower | Line: 1251 | Upvalues: UIClick (copy), Players (copy), ReplicatedStorage (copy), t7 (copy), showBuyPowerPrompt (copy), t6 (copy), playPowerUseEffect (copy) ]]
+	UIClick:Play()
+
+	if Players.LocalPlayer:GetAttribute("Tutorial") then
+		local ok, result = pcall(require, ReplicatedStorage.Modules.Screens.Toasts)
+
+		if not (ok and result) then
+			return
+		end
+
+		result:Show("Power-ups are unlocked after the tutorial!", Color3.fromRGB(229, 115, 115))
+	else
+		if (t7[p1.Name] or 0) <= 0 then
+			showBuyPowerPrompt(p1)
+
+			return
+		end
+
+		local v1 = t6[p1.Name]
+
+		if not v1 or (not v1() or p1.DeferEffect) then
+			return
+		end
+
+		playPowerUseEffect(p2, p1)
+	end
+end
+
+local function createPowerButton(p1, p2, p3) --[[ createPowerButton | Line: 1279 | Upvalues: UIConfig (copy), t9 (copy), t10 (copy), activatePower (copy), Helpers (copy), Players (copy), t8 (copy), t7 (copy), TweenService (copy) ]]
+	local TextButton = Instance.new("TextButton")
+
+	TextButton.Name = p2.Name .. "Button"
+	TextButton.LayoutOrder = p3
+	TextButton.Size = UDim2.fromScale(1, 0.3)
+	TextButton.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	TextButton.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+	TextButton.BorderSizePixel = 0
+	TextButton.AutoButtonColor = false
+	TextButton.Text = ""
+	TextButton.ZIndex = 6
+	TextButton.Parent = p1
+	t9[p2.Name] = TextButton
+	t10[p2.Name] = function() --[[ Line: 1292 | Upvalues: activatePower (ref), p2 (copy), TextButton (copy) ]]
+		activatePower(p2, TextButton)
+	end
+	Helpers.CreateCorner(TextButton, UIConfig.Corners.Button)
+	Helpers.CreateScaledStroke(TextButton, UIConfig.Stroke.Card)
+
+	local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint.AspectRatio = 1
+	UIAspectRatioConstraint.Parent = TextButton
+
+	local Icon = Instance.new("ImageLabel")
+
+	Icon.Name = "Icon"
+	Icon.Size = UDim2.fromScale(0.5, 0.5)
+	Icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	Icon.Position = UDim2.fromScale(0.5, 0.42)
+	Icon.BackgroundTransparency = 1
+	Icon.Image = p2.Icon
+	Icon.ImageColor3 = p2.Color or Color3.fromRGB(255, 255, 255)
+	Icon.ScaleType = Enum.ScaleType.Fit
+	Icon.ZIndex = 7
+	Icon.Parent = TextButton
+
+	local Badge = Instance.new("Frame")
+
+	Badge.Name = "Badge"
+	Badge.Size = UDim2.fromScale(0.28, 0.28)
+	Badge.AnchorPoint = Vector2.new(0.5, 0.5)
+	Badge.Position = UDim2.fromScale(0.88, 0.12)
+	Badge.BackgroundColor3 = Color3.fromRGB(220, 40, 40)
+	Badge.ZIndex = 8
+	Badge.Parent = TextButton
+	Helpers.CreateCorner(Badge, UDim.new(0.5, 0))
+
+	local UIAspectRatioConstraint2 = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint2.AspectRatio = 1
+	UIAspectRatioConstraint2.Parent = Badge
+
+	local Count = Instance.new("TextLabel")
+
+	Count.Name = "Count"
+	Count.Size = UDim2.fromScale(1, 1)
+	Count.BackgroundTransparency = 1
+
+	local v2 = Players.LocalPlayer:GetAttribute(p2.Attribute) or 0
+
+	Count.Text = tostring(v2)
+	Count.Font = Enum.Font.GothamBold
+	Count.TextScaled = true
+	Count.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Count.ZIndex = 9
+	Count.Parent = Badge
+	t8[p2.Name] = Count
+	t7[p2.Name] = v2
+	Players.LocalPlayer:GetAttributeChangedSignal(p2.Attribute):Connect(function() --[[ Line: 1347 | Upvalues: Players (ref), p2 (copy), t7 (ref), Count (copy) ]]
+		local v1 = Players.LocalPlayer:GetAttribute(p2.Attribute) or 0
+
+		t7[p2.Name] = v1
+		Count.Text = tostring(v1)
+	end)
+
+	local Label = Instance.new("TextLabel")
+
+	Label.Name = "Label"
+	Label.Size = UDim2.fromScale(0.9, 0.2)
+	Label.AnchorPoint = Vector2.new(0.5, 1)
+	Label.Position = UDim2.fromScale(0.5, 0.95)
+	Label.BackgroundTransparency = 1
+	Label.Text = p2.Name
+	Label.Font = UIConfig.Typography.Caption.Font
+	Label.TextScaled = true
+	Label.TextColor3 = UIConfig.Colors.Text.Secondary
+	Label.ZIndex = 7
+	Label.Parent = TextButton
+	Helpers.CreateTextStroke(Label, UIConfig.Stroke.Text)
+
+	if p2.GamepadKey then
+		local v3 = Helpers.AttachButtonGlyph(TextButton, p2.GamepadKey)
+
+		v3.AnchorPoint = Vector2.new(0.5, 0.5)
+		v3.Position = UDim2.fromScale(0, 0.5)
+		v3.Size = UDim2.fromScale(0.34, 0.34)
+		v3.ZIndex = 12
+
+		local Icon2 = v3:FindFirstChild("Icon")
+
+		if Icon2 and Icon2:IsA("ImageLabel") then
+			Icon2.ImageColor3 = Color3.fromRGB(255, 255, 255)
+			Icon2.ImageTransparency = 0.22
+			Icon2.ZIndex = v3.ZIndex + 1
+		end
+	end
+
+	TextButton.MouseButton1Click:Connect(function() --[[ Line: 1382 | Upvalues: t10 (ref), p2 (copy) ]]
+		t10[p2.Name]()
+	end)
+
+	local Size = TextButton.Size
+
+	TextButton.MouseButton1Down:Connect(function() --[[ Line: 1387 | Upvalues: TweenService (ref), TextButton (copy), Helpers (ref), Size (copy) ]]
+		TweenService:Create(TextButton, Helpers.TweenInfoFromPreset("Quick"), {
+			Size = UDim2.fromScale(Size.X.Scale * 0.92, Size.Y.Scale * 0.92)
+		}):Play()
+	end)
+	TextButton.MouseButton1Up:Connect(function() --[[ Line: 1392 | Upvalues: TweenService (ref), TextButton (copy), Helpers (ref), Size (copy) ]]
+		TweenService:Create(TextButton, Helpers.TweenInfoFromPreset("Quick"), {
+			Size = Size
+		}):Play()
+	end)
+
+	return TextButton
+end
+
+local function bindPowerGamepadShortcuts() --[[ bindPowerGamepadShortcuts | Line: 1401 | Upvalues: v64 (ref), t5 (copy), ContextActionService (copy), v21 (ref), v58 (ref), v9 (ref), LocalPlayer (copy), ReplicatedStorage (copy), t10 (copy) ]]
+	if v64 then
+		return
+	end
+
+	v64 = true
+
+	for v1, v2 in t5 do
+		local GamepadKey = v2.GamepadKey
+
+		if GamepadKey then
+			ContextActionService:BindActionAtPriority("AuctionBidding_Power_" .. v2.Attribute, function(p1, p2) --[[ Line: 1408 | Upvalues: v21 (ref), v58 (ref), v9 (ref), LocalPlayer (ref), ReplicatedStorage (ref), t10 (ref), v2 (copy) ]]
+				if p2 ~= Enum.UserInputState.Begin then
+					return Enum.ContextActionResult.Sink
+				end
+
+				if not v21 or v58 then
+					return Enum.ContextActionResult.Sink
+				end
+
+				if not (v9 and v9.Visible) then
+					return Enum.ContextActionResult.Sink
+				end
+
+				local PlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+				if PlayerGui and PlayerGui:FindFirstChild("BuyPowerPrompt") then
+					return Enum.ContextActionResult.Sink
+				end
+
+				local ok, result = pcall(require, ReplicatedStorage.Modules.UIController)
+
+				if ok and (result and (result:GetActiveModal() ~= nil or result:IsOpen("AuctionKickNPC"))) then
+					return Enum.ContextActionResult.Sink
+				end
+
+				local v1 = t10[v2.Name]
+
+				if not v1 then
+					return Enum.ContextActionResult.Sink
+				end
+
+				v1()
+
+				return Enum.ContextActionResult.Sink
+			end, false, 3000, GamepadKey)
+		end
+	end
+end
+
+local function unbindPowerGamepadShortcuts() --[[ unbindPowerGamepadShortcuts | Line: 1438 | Upvalues: v64 (ref), t5 (copy), ContextActionService (copy) ]]
+	if not v64 then
+		return
+	end
+
+	v64 = false
+
+	for v1, v2 in t5 do
+		if v2.GamepadKey then
+			ContextActionService:UnbindAction("AuctionBidding_Power_" .. v2.Attribute)
+		end
+	end
+end
+
+function t2.Create(p1, p2) --[[ Create | Line: 1452 | Upvalues: v27 (ref), v8 (ref), v1 (ref), v2 (ref), v6 (ref), UIConfig (copy), Helpers (copy), v14 (ref), v15 (ref), v17 (copy), v18 (copy), v16 (ref), v58 (ref), v10 (ref), LocalPlayer (copy), v52 (ref), Monetisation (copy), promptCashForBid (copy), v25 (ref), v26 (ref), v4 (ref), v35 (ref), v30 (ref), v33 (ref), v34 (ref), BidMiss (copy), SoundService (copy), showFloatingResult (copy), v29 (ref), v49 (ref), v50 (ref), v51 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), Auction (copy), t (copy), v23 (ref), v22 (ref), v37 (ref), Sound (copy), v43 (ref), playOnceLouder (copy), Whoosh (copy), TweenService (copy), v36 (ref), updateBidButtonAffordance (copy), v19 (copy), v20 (copy), v5 (ref), UIClick (copy), ReplicatedStorage (copy), v9 (ref), t5 (copy), createPowerButton (copy), v7 (ref), v11 (ref), v44 (ref), v46 (ref), v47 (ref), v13 (ref), v48 (ref) ]]
+	if v27 then
+		return
+	end
+
+	v27 = true
+	v8 = p2
+	v1 = Instance.new("Frame")
+	v1.Name = "AuctionBiddingContainer"
+	v1.AnchorPoint = Vector2.new(0.5, 1)
+	v1.Position = UDim2.fromScale(0.5, 1.3)
+	v1.Size = UDim2.fromScale(0.4, 1)
+	v1.BackgroundTransparency = 1
+	v1.BorderSizePixel = 0
+	v1.Active = true
+	v1.Visible = false
+	v1.ZIndex = 5
+	v1.Parent = p2
+	v2 = Instance.new("UIAspectRatioConstraint")
+	v2.AspectRatio = 3.2323232323232327
+	v2.DominantAxis = Enum.DominantAxis.Width
+	v2.Parent = v1
+	v6 = v1
+
+	local ConsolePanel = Instance.new("Frame")
+
+	ConsolePanel.Name = "ConsolePanel"
+	ConsolePanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	ConsolePanel.Position = UDim2.fromScale(0.5, 0.47)
+	ConsolePanel.Size = UDim2.fromScale(1.08, 1.12)
+	ConsolePanel.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	ConsolePanel.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+	ConsolePanel.BorderSizePixel = 0
+	ConsolePanel.ZIndex = 4
+	ConsolePanel.Parent = v1
+	Helpers.CreateCorner(ConsolePanel, UIConfig.Corners.Panel)
+	Helpers.CreateScaledStroke(ConsolePanel, UIConfig.Stroke.Panel)
+	v14 = Instance.new("TextButton")
+	v14.Name = "BidButton"
+	v14.AnchorPoint = Vector2.new(0.5, 1)
+	v14.Position = UDim2.fromScale(0.5, 0.94)
+	v14.Size = UDim2.fromScale(0.78, 0.42)
+	v14.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	v14.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+	v14.BorderSizePixel = 0
+	v14.AutoButtonColor = false
+	v14.Text = ""
+	v14.Font = UIConfig.Typography.Subheading.Font
+	v14.TextScaled = true
+	v14.TextColor3 = UIConfig.Colors.Accent.Success
+	v14.ZIndex = 8
+	v14.Parent = v1
+	Helpers.CreateCorner(v14, UIConfig.Corners.Button)
+	Helpers.CreateScaledStroke(v14, UIConfig.Stroke.Card)
+
+	local UIPadding = Instance.new("UIPadding")
+
+	UIPadding.PaddingTop = UDim.new(0.12, 0)
+	UIPadding.PaddingBottom = UDim.new(0.12, 0)
+	UIPadding.Parent = v14
+	v15 = Instance.new("TextLabel")
+	v15.Name = "BidText"
+	v15.AnchorPoint = Vector2.new(0.5, 0.5)
+	v15.Position = v17
+	v15.Size = v18
+	v15.BackgroundTransparency = 1
+	v15.Font = UIConfig.Typography.Subheading.Font
+	v15.Text = "BID"
+	v15.TextScaled = true
+	v15.TextColor3 = UIConfig.Colors.Accent.Success
+	v15.TextXAlignment = Enum.TextXAlignment.Center
+	v15.TextYAlignment = Enum.TextYAlignment.Center
+	v15.ZIndex = v14.ZIndex + 1
+	v15.Parent = v14
+	Helpers.CreateTextStroke(v15, UIConfig.Stroke.Text)
+	v16 = Helpers.CreateRobuxButton({
+		Name = "CashBidRobuxButton",
+		Label = "BUY CASH",
+		PriceR = 0,
+		Size = v14.Size,
+		ZIndex = v14.ZIndex,
+		Parent = v1,
+		OnActivated = function() --[[ OnActivated | Line: 1558 | Upvalues: v58 (ref), v10 (ref), LocalPlayer (ref), v52 (ref), Monetisation (ref), promptCashForBid (ref) ]]
+			if v58 then
+				return
+			end
+
+			if v10 and not v10.Visible then
+				return
+			end
+
+			local v1 = v52 - (LocalPlayer:GetAttribute("Cash") or 0)
+			local v2
+
+			if v1 <= 0 then
+				v2 = nil
+			elseif Monetisation.GetAuctionCashBundleForAmount then
+				v2 = Monetisation.GetAuctionCashBundleForAmount(v1)
+			elseif Monetisation.GetCashBundleForAmount then
+				local v4 = Monetisation.GetCashBundleForAmount(v1)
+
+				v2 = if v4 then v4 else nil
+			else
+				v2 = nil
+			end
+
+			if not v2 then
+				return
+			end
+
+			promptCashForBid(v2)
+		end
+	})
+	v16.AnchorPoint = v14.AnchorPoint
+	v16.Position = v14.Position
+	v16.Visible = false
+	v25 = Instance.new("TextButton")
+	v25.Name = "LeaveButton"
+	v25.AnchorPoint = Vector2.new(0.5, 1)
+	v25.Position = UDim2.fromScale(0.5, 0.94)
+	v25.Size = UDim2.fromScale(0.78, 0.42)
+	v25.BackgroundColor3 = UIConfig.Colors.Accent.Error
+	v25.BackgroundTransparency = 0.15
+	v25.BorderSizePixel = 0
+	v25.AutoButtonColor = false
+	v25.Text = ""
+	v25.Font = UIConfig.Typography.Subheading.Font
+	v25.TextScaled = true
+	v25.TextColor3 = Color3.fromRGB(255, 255, 255)
+	v25.ZIndex = 8
+	v25.Visible = false
+	v25.Parent = v1
+	Helpers.CreateCorner(v25, UIConfig.Corners.Button)
+	Helpers.CreateScaledStroke(v25, UIConfig.Stroke.Card)
+
+	local UIPadding2 = Instance.new("UIPadding")
+
+	UIPadding2.PaddingTop = UDim.new(0.12, 0)
+	UIPadding2.PaddingBottom = UDim.new(0.12, 0)
+	UIPadding2.Parent = v25
+	v26 = Instance.new("TextLabel")
+	v26.Name = "LeaveText"
+	v26.AnchorPoint = Vector2.new(0.5, 0.5)
+	v26.Position = v17
+	v26.Size = v18
+	v26.BackgroundTransparency = 1
+	v26.Font = UIConfig.Typography.Subheading.Font
+	v26.Text = "LEAVE"
+	v26.TextScaled = true
+	v26.TextColor3 = Color3.fromRGB(255, 255, 255)
+	v26.TextXAlignment = Enum.TextXAlignment.Center
+	v26.TextYAlignment = Enum.TextYAlignment.Center
+	v26.ZIndex = v25.ZIndex + 1
+	v26.Parent = v25
+	Helpers.CreateTextStroke(v26, UIConfig.Stroke.Text)
+	v4 = function() --[[ Line: 1619 | Upvalues: v58 (ref), v10 (ref), LocalPlayer (ref), v52 (ref), Monetisation (ref), promptCashForBid (ref), v35 (ref), v30 (ref), v33 (ref), v34 (ref), BidMiss (ref), SoundService (ref), showFloatingResult (ref), v29 (ref), v49 (ref), v50 (ref), UIConfig (ref), v51 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref), Auction (ref), t (ref), v23 (ref), v22 (ref), v37 (ref), Sound (ref), v43 (ref), playOnceLouder (ref), Whoosh (ref), TweenService (ref), v14 (ref), v15 (ref), v36 (ref), updateBidButtonAffordance (ref) ]]
+		if v58 then
+			return
+		end
+
+		if v10 and not v10.Visible then
+			return
+		end
+
+		local v1 = v52 - (LocalPlayer:GetAttribute("Cash") or 0)
+		local v2
+
+		if v1 <= 0 then
+			v2 = nil
+		elseif Monetisation.GetAuctionCashBundleForAmount then
+			v2 = Monetisation.GetAuctionCashBundleForAmount(v1)
+		elseif Monetisation.GetCashBundleForAmount then
+			local v4 = Monetisation.GetCashBundleForAmount(v1)
+
+			v2 = if v4 then v4 else nil
+		else
+			v2 = nil
+		end
+
+		if v2 then
+			promptCashForBid(v2)
+
+			return
+		end
+
+		if v35 then
+			return
+		end
+
+		local v5 = v30
+		local v6 = if v33 <= v5 + 0.0075 then if v5 - 0.0075 <= v33 + v34 then true else false else false
+		local v7 = if v6 then if v34 * 0.38 * 0.5 >= math.abs(v5 - (v33 + v34 * 0.5)) then "perfect" else "good" else "miss"
+		local v9 = v7 ~= "miss"
+
+		if v9 or not LocalPlayer:GetAttribute("Tutorial") then
+			if v29 then
+				v29:Disconnect()
+				v29 = nil
+			end
+
+			if v49 then
+				v49:Cancel()
+				v49 = nil
+			end
+
+			if v50 then
+				v50:Cancel()
+				v50 = nil
+			end
+
+			if v9 then
+				if (LocalPlayer:GetAttribute("Cash") or 0) < v52 then
+					local v102 = BidMiss
+					local v11
+
+					if v102 then
+						local v122 = v102:Clone()
+
+						v122.Parent = SoundService
+						v122:Play()
+						v122.Ended:Connect(function() --[[ Line: 66 | Upvalues: v122 (copy) ]]
+							v122:Destroy()
+						end)
+					end
+
+					showFloatingResult("Not enough cash!", UIConfig.Colors.Accent.Error)
+					v11 = v51
+					task.delay(0.4, function() --[[ Line: 1675 | Upvalues: v51 (ref), v11 (copy), v10 (ref), v35 (ref), v58 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref) ]]
+						if v51 ~= v11 then
+							return
+						end
+
+						if not v10 or (not v10.Visible or (v35 or v58)) then
+							return
+						end
+
+						v33 = math.random() * (1 - v34)
+
+						if v12 then
+							v12.Position = UDim2.fromScale(v33, 0.5)
+						end
+
+						startSlider()
+						startBidBarPulse()
+					end)
+				else
+					local v13 = Auction
+					local v142 = v13.Name .. "/Bid"
+					local v152 = t[v142]
+					local v16
+
+					if v152 then
+						v16 = v152
+					else
+						local Bid = v13:WaitForChild("Bid", 10)
+
+						if Bid then
+							t[v142] = Bid
+							v16 = Bid
+						else
+							warn("[AuctionBidding] Remote never appeared: " .. v142)
+							v16 = nil
+						end
+					end
+
+					if v16 then
+						v16:FireServer()
+					end
+
+					v23 = true
+
+					if v22 then
+						local v17 = v22
+
+						v22 = nil
+						pcall(function() --[[ Line: 187 | Upvalues: v17 (copy) ]]
+							v17:Hide()
+							task.delay(0.3, function() --[[ Line: 189 | Upvalues: v17 (ref) ]]
+								pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+									v1:Destroy()
+								end)
+							end)
+						end)
+					end
+
+					if v37 then
+						local v18 = Sound
+
+						if v18 then
+							local v19 = v18:Clone()
+
+							v19.Parent = SoundService
+							v19:Play()
+							v19.Ended:Connect(function() --[[ Line: 66 | Upvalues: v19 (copy) ]]
+								v19:Destroy()
+							end)
+						end
+
+						v43()
+					else
+						playOnceLouder(Whoosh, 0.5)
+					end
+
+					showFloatingResult("NICE!", UIConfig.Colors.Accent.Success)
+
+					local v20
+
+					if v12 then
+						TweenService:Create(v12, TweenInfo.new(0.1), {
+							BackgroundTransparency = 0
+						}):Play()
+						task.delay(0.25, function() --[[ Line: 1710 | Upvalues: v12 (ref) ]]
+							if not (v12 and v12.Parent) then
+								return
+							end
+
+							v12.BackgroundTransparency = 0.1
+						end)
+					end
+
+					v20 = v51
+					task.delay(0.4, function() --[[ Line: 1728 | Upvalues: v51 (ref), v20 (copy), v10 (ref), v35 (ref), v58 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref) ]]
+						if v51 ~= v20 then
+							return
+						end
+
+						if not v10 or (not v10.Visible or (v35 or v58)) then
+							return
+						end
+
+						v33 = math.random() * (1 - v34)
+
+						if v12 then
+							v12.Position = UDim2.fromScale(v33, 0.5)
+						end
+
+						startSlider()
+						startBidBarPulse()
+					end)
+				end
+			else
+				v35 = true
+
+				local v21 = BidMiss
+
+				if v21 then
+					local v222 = v21:Clone()
+
+					v222.Parent = SoundService
+					v222:Play()
+					v222.Ended:Connect(function() --[[ Line: 66 | Upvalues: v222 (copy) ]]
+						v222:Destroy()
+					end)
+				end
+
+				showFloatingResult("MISSED!", UIConfig.Colors.Accent.Error)
+
+				local v232
+
+				if v14 then
+					if v15 then
+						v15.Text = string.format("WAIT %.1fs", v36)
+					else
+						v14.Text = string.format("WAIT %.1fs", v36)
+					end
+
+					local v25 = v15 or v14
+
+					TweenService:Create(v25, TweenInfo.new(0.15), {
+						TextColor3 = UIConfig.Colors.Text.Muted
+					}):Play()
+
+					local v26 = tick()
+
+					task.spawn(function() --[[ Line: 1759 | Upvalues: v35 (ref), v14 (ref), v36 (ref), v26 (copy), v15 (ref) ]]
+						while v35 and (v14 and v14.Parent) do
+							local v1 = v36 - (tick() - v26)
+
+							if v1 <= 0 then
+								break
+							end
+
+							if v15 then
+								v15.Text = string.format("WAIT %.1fs", v1)
+							else
+								v14.Text = string.format("WAIT %.1fs", v1)
+							end
+
+							task.wait(0.1)
+						end
+					end)
+				end
+
+				v232 = v51
+				task.delay(v36, function() --[[ Line: 1778 | Upvalues: v51 (ref), v232 (copy), v35 (ref), v14 (ref), v10 (ref), updateBidButtonAffordance (ref), v58 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref) ]]
+					if v51 ~= v232 then
+						return
+					end
+
+					v35 = false
+
+					if not (v14 and (v10 and v10.Visible)) then
+						return
+					end
+
+					updateBidButtonAffordance()
+
+					if v58 then
+						return
+					end
+
+					v33 = math.random() * (1 - v34)
+
+					if v12 then
+						v12.Position = UDim2.fromScale(v33, 0.5)
+					end
+
+					startSlider()
+					startBidBarPulse()
+				end)
+			end
+		else
+			local v27 = BidMiss
+
+			if v27 then
+				local v28 = v27:Clone()
+
+				v28.Parent = SoundService
+				v28:Play()
+				v28.Ended:Connect(function() --[[ Line: 66 | Upvalues: v28 (copy) ]]
+					v28:Destroy()
+				end)
+			end
+
+			showFloatingResult("Click in the bidding zone!", Color3.fromRGB(255, 220, 80), UDim2.fromScale(0.5, 0.3))
+		end
+	end
+	v14.MouseButton1Down:Connect(v4)
+
+	local v110 = Helpers.AttachButtonGlyph(v14, Enum.KeyCode.ButtonR2)
+
+	v110.AnchorPoint = Vector2.new(0, 0.5)
+	v110.Position = UDim2.fromScale(0.68, 0.5)
+	v110.Size = UDim2.fromScale(0.1, 0.66)
+	v110.ZIndex = v14.ZIndex + 6
+
+	local function syncBidTextLayout() --[[ syncBidTextLayout | Line: 1802 | Upvalues: v110 (copy), v15 (ref), v19 (ref), v20 (ref), v17 (ref), v18 (ref) ]]
+		if not v15 then
+			return
+		end
+
+		if v110.Visible then
+			v15.Position = v19
+			v15.Size = v20
+		else
+			v15.Position = v17
+			v15.Size = v18
+		end
+	end
+
+	v110:GetPropertyChangedSignal("Visible"):Connect(syncBidTextLayout)
+
+	if v15 and v110.Visible then
+		v15.Position = v19
+		v15.Size = v20
+	elseif v15 then
+		v15.Position = v17
+		v15.Size = v18
+	end
+
+	local Icon = v110:FindFirstChild("Icon")
+
+	if Icon and Icon:IsA("ImageLabel") then
+		Icon.Size = UDim2.fromScale(1, 1)
+		Icon.ImageColor3 = UIConfig.Colors.Accent.Success
+		Icon.ZIndex = v110.ZIndex + 1
+	end
+
+	local v24 = Helpers.AttachButtonGlyph(v25, Enum.KeyCode.ButtonR2)
+
+	v24.AnchorPoint = Vector2.new(0, 0.5)
+	v24.Position = UDim2.fromScale(0.68, 0.5)
+	v24.Size = UDim2.fromScale(0.1, 0.66)
+	v24.ZIndex = v25.ZIndex + 6
+
+	local function syncLeaveTextLayout() --[[ syncLeaveTextLayout | Line: 1819 | Upvalues: v24 (copy), v26 (ref), v19 (ref), v20 (ref), v17 (ref), v18 (ref) ]]
+		if not v26 then
+			return
+		end
+
+		if v24.Visible then
+			v26.Position = v19
+			v26.Size = v20
+		else
+			v26.Position = v17
+			v26.Size = v18
+		end
+	end
+
+	v24:GetPropertyChangedSignal("Visible"):Connect(syncLeaveTextLayout)
+
+	if v26 and v24.Visible then
+		v26.Position = v19
+		v26.Size = v20
+	elseif v26 then
+		v26.Position = v17
+		v26.Size = v18
+	end
+
+	local Icon2 = v24:FindFirstChild("Icon")
+
+	if Icon2 and Icon2:IsA("ImageLabel") then
+		Icon2.Size = UDim2.fromScale(1, 1)
+		Icon2.ImageColor3 = Color3.fromRGB(255, 255, 255)
+		Icon2.ZIndex = v24.ZIndex + 1
+	end
+
+	v5 = function() --[[ Line: 1831 | Upvalues: UIClick (ref), Auction (ref), t (ref), ReplicatedStorage (ref) ]]
+		UIClick:Play()
+
+		local v1 = Auction
+		local v2 = v1.Name .. "/LeaveAuction"
+		local v3 = t[v2]
+		local v4
+
+		if v3 then
+			v4 = v3
+		else
+			local LeaveAuction = v1:WaitForChild("LeaveAuction", 10)
+
+			if LeaveAuction then
+				t[v2] = LeaveAuction
+				v4 = LeaveAuction
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v2)
+				v4 = nil
+			end
+		end
+
+		if not (if v4 then v4:InvokeServer() else v4) then
+			return
+		end
+
+		local UIController = require(ReplicatedStorage.Modules.UIController)
+
+		UIController:Close("AuctionBidding")
+		UIController:Close("AuctionPowers")
+		UIController:Close("AuctionWinningBid")
+		UIController:Close("AuctionWarning")
+		UIController:Close("AuctionKickNPC")
+	end
+	v25.MouseButton1Click:Connect(v5)
+
+	for v3, v42 in { v25, v14 } do
+		local Size = v42.Size
+
+		v42.MouseButton1Down:Connect(function() --[[ Line: 1852 | Upvalues: TweenService (ref), v42 (copy), Helpers (ref), Size (copy) ]]
+			TweenService:Create(v42, Helpers.TweenInfoFromPreset("Quick"), {
+				Size = UDim2.fromScale(Size.X.Scale * 0.94, Size.Y.Scale * 0.94)
+			}):Play()
+		end)
+		v42.MouseButton1Up:Connect(function() --[[ Line: 1857 | Upvalues: TweenService (ref), v42 (copy), Helpers (ref), Size (copy) ]]
+			TweenService:Create(v42, Helpers.TweenInfoFromPreset("Quick"), {
+				Size = Size
+			}):Play()
+		end)
+	end
+
+	v9 = Instance.new("Frame")
+	v9.Name = "PowersColumn"
+	v9.AnchorPoint = Vector2.new(1, 1)
+	v9.Size = UDim2.fromScale(1, 0.32)
+	v9.BackgroundTransparency = 1
+	v9.Visible = false
+	v9.ZIndex = 5
+	v9.Parent = p2
+
+	local UIAspectRatioConstraint = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint.AspectRatio = 0.3
+	UIAspectRatioConstraint.Parent = v9
+
+	local function updatePowersPosition() --[[ updatePowersPosition | Line: 1894 | Upvalues: v9 (ref) ]]
+		v9.Position = UDim2.fromScale(0.27, 0.9)
+	end
+
+	v9.Position = UDim2.fromScale(0.27, 0.9)
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updatePowersPosition)
+
+	local UIListLayout = Instance.new("UIListLayout")
+
+	UIListLayout.FillDirection = Enum.FillDirection.Vertical
+	UIListLayout.Padding = UDim.new(0.02, 0)
+	UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	UIListLayout.Parent = v9
+
+	for v53, v62 in t5 do
+		createPowerButton(v9, v62, v53)
+	end
+
+	v7 = Instance.new("Frame")
+	v7.Name = "WinningBidRow"
+	v7.AnchorPoint = Vector2.new(0, 1)
+	v7.Position = UDim2.fromScale(0.73, 0.9)
+	v7.Size = UDim2.fromScale(0.11, 0.32)
+	v7.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	v7.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+	v7.BorderSizePixel = 0
+	v7.Visible = false
+	v7.ZIndex = 5
+	v7.Parent = p2
+
+	local UIAspectRatioConstraint2 = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint2.AspectRatio = 0.65
+	UIAspectRatioConstraint2.DominantAxis = Enum.DominantAxis.Width
+	UIAspectRatioConstraint2.Parent = v7
+	Helpers.CreateCorner(v7, UIConfig.Corners.Panel)
+	Helpers.CreateScaledStroke(v7, UIConfig.Stroke.Card)
+
+	local CaptionLabel = Instance.new("TextLabel")
+
+	CaptionLabel.Name = "CaptionLabel"
+	CaptionLabel.AnchorPoint = Vector2.new(0.5, 0)
+	CaptionLabel.Size = UDim2.fromScale(0.9, 0.07)
+	CaptionLabel.Position = UDim2.fromScale(0.5, 0.04)
+	CaptionLabel.BackgroundTransparency = 1
+	CaptionLabel.TextColor3 = UIConfig.Colors.Text.Secondary
+	CaptionLabel.TextScaled = true
+	CaptionLabel.Font = UIConfig.Typography.Caption.Font
+	CaptionLabel.Text = "HIGHEST BID"
+	CaptionLabel.TextXAlignment = Enum.TextXAlignment.Center
+	CaptionLabel.ZIndex = 7
+	CaptionLabel.Parent = v7
+	Helpers.CreateTextStroke(CaptionLabel, UIConfig.Stroke.Text)
+
+	local CharacterViewport = Instance.new("ViewportFrame")
+
+	CharacterViewport.Name = "CharacterViewport"
+	CharacterViewport.AnchorPoint = Vector2.new(0.5, 0)
+	CharacterViewport.Size = UDim2.fromScale(0.85, 0.38)
+	CharacterViewport.Position = UDim2.fromScale(0.5, 0.13)
+	CharacterViewport.BackgroundColor3 = UIConfig.Colors.Panel.Surface
+	CharacterViewport.BackgroundTransparency = UIConfig.Transparency.CardSurface
+	CharacterViewport.ZIndex = 6
+	CharacterViewport.Parent = v7
+
+	local UIAspectRatioConstraint3 = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint3.AspectRatio = 1
+	UIAspectRatioConstraint3.Parent = CharacterViewport
+	Helpers.CreateCorner(CharacterViewport, UIConfig.Corners.Card)
+	Helpers.CreateScaledStroke(CharacterViewport, UIConfig.Stroke.Card)
+
+	local Camera = Instance.new("Camera")
+
+	Camera.Parent = CharacterViewport
+	CharacterViewport.CurrentCamera = Camera
+
+	local InfoContainer = Instance.new("Frame")
+
+	InfoContainer.Name = "InfoContainer"
+	InfoContainer.Size = UDim2.fromScale(0.9, 0.42)
+	InfoContainer.AnchorPoint = Vector2.new(0.5, 1)
+	InfoContainer.Position = UDim2.fromScale(0.5, 0.97)
+	InfoContainer.BackgroundTransparency = 1
+	InfoContainer.ZIndex = 6
+	InfoContainer.Parent = v7
+
+	local NameLabel = Instance.new("TextLabel")
+
+	NameLabel.Name = "NameLabel"
+	NameLabel.AnchorPoint = Vector2.new(0.5, 0)
+	NameLabel.Size = UDim2.fromScale(1, 0.32)
+	NameLabel.Position = UDim2.fromScale(0.5, 0.02)
+	NameLabel.BackgroundTransparency = 1
+	NameLabel.TextColor3 = UIConfig.Colors.Text.Primary
+	NameLabel.TextScaled = true
+	NameLabel.Font = UIConfig.Typography.Heading.Font
+	NameLabel.Text = ""
+	NameLabel.TextXAlignment = Enum.TextXAlignment.Center
+	NameLabel.ZIndex = 7
+	NameLabel.Parent = InfoContainer
+	Helpers.CreateTextStroke(NameLabel, UIConfig.Stroke.Text)
+
+	local DividerRow = Instance.new("Frame")
+
+	DividerRow.Name = "DividerRow"
+	DividerRow.AnchorPoint = Vector2.new(0.5, 0.5)
+	DividerRow.Size = UDim2.fromScale(0.9, 0.1)
+	DividerRow.Position = UDim2.fromScale(0.5, 0.46)
+	DividerRow.BackgroundTransparency = 1
+	DividerRow.ZIndex = 7
+	DividerRow.Parent = InfoContainer
+
+	local LeftLine = Instance.new("Frame")
+
+	LeftLine.Name = "LeftLine"
+	LeftLine.AnchorPoint = Vector2.new(0, 0.5)
+	LeftLine.Size = UDim2.fromScale(0.4, 0.1)
+	LeftLine.Position = UDim2.fromScale(0, 0.5)
+	LeftLine.BackgroundColor3 = UIConfig.Colors.Text.Muted
+	LeftLine.BackgroundTransparency = 0.4
+	LeftLine.BorderSizePixel = 0
+	LeftLine.ZIndex = 7
+	LeftLine.Parent = DividerRow
+
+	local RightLine = LeftLine:Clone()
+
+	RightLine.Name = "RightLine"
+	RightLine.AnchorPoint = Vector2.new(1, 0.5)
+	RightLine.Position = UDim2.fromScale(1, 0.5)
+	RightLine.Parent = DividerRow
+
+	local Diamond = Instance.new("Frame")
+
+	Diamond.Name = "Diamond"
+	Diamond.AnchorPoint = Vector2.new(0.5, 0.5)
+	Diamond.Size = UDim2.fromScale(0, 0.7)
+	Diamond.Position = UDim2.fromScale(0.5, 0.5)
+	Diamond.Rotation = 45
+	Diamond.BackgroundColor3 = UIConfig.Colors.Accent.Success
+	Diamond.BorderSizePixel = 0
+	Diamond.ZIndex = 8
+	Diamond.Parent = DividerRow
+
+	local UIAspectRatioConstraint4 = Instance.new("UIAspectRatioConstraint")
+
+	UIAspectRatioConstraint4.AspectRatio = 1
+	UIAspectRatioConstraint4.DominantAxis = Enum.DominantAxis.Height
+	UIAspectRatioConstraint4.Parent = Diamond
+
+	local BidLabel = Instance.new("TextLabel")
+
+	BidLabel.Name = "BidLabel"
+	BidLabel.AnchorPoint = Vector2.new(0.5, 1)
+	BidLabel.Size = UDim2.fromScale(1, 0.42)
+	BidLabel.Position = UDim2.fromScale(0.5, 0.98)
+	BidLabel.BackgroundTransparency = 1
+	BidLabel.TextColor3 = UIConfig.Colors.Accent.Success
+	BidLabel.TextScaled = true
+	BidLabel.Font = UIConfig.Typography.Display.Font
+	BidLabel.Text = ""
+	BidLabel.TextXAlignment = Enum.TextXAlignment.Center
+	BidLabel.ZIndex = 7
+	BidLabel.Parent = InfoContainer
+	Helpers.CreateTextStroke(BidLabel, UIConfig.Stroke.TextHeavy)
+	v10 = Instance.new("Frame")
+	v10.Name = "BidBarRow"
+	v10.BackgroundTransparency = 1
+	v10.ZIndex = 5
+	v10.Parent = v1
+	v11 = Instance.new("Frame")
+	v11.Name = "Track"
+	v11.AnchorPoint = Vector2.new(0.5, 0.5)
+	v11.Position = UDim2.fromScale(0.5, 0.5)
+	v11.Size = UDim2.fromScale(1, 1)
+	v11.BackgroundColor3 = UIConfig.Colors.Panel.Background
+	v11.BackgroundTransparency = UIConfig.Transparency.PanelBackground
+	v11.BorderSizePixel = 0
+	v11.ClipsDescendants = true
+	v11.ZIndex = 6
+	v11.Parent = v10
+	Helpers.CreateCorner(v11, UIConfig.Corners.Panel)
+	Helpers.CreateScaledStroke(v11, UIConfig.Stroke.Card)
+	v44 = v11.BackgroundColor3
+	v46 = v11.BackgroundTransparency
+
+	local v72 = v11:FindFirstChildWhichIsA("UIStroke")
+
+	if v72 then
+		v47 = v72.Color
+	end
+
+	v12 = Instance.new("Frame")
+	v12.Name = "BidZone"
+	v12.AnchorPoint = Vector2.new(0, 0.5)
+	v12.Position = UDim2.fromScale(0.4, 0.5)
+	v12.Size = UDim2.fromScale(v34, 0.9)
+	v12.BackgroundColor3 = UIConfig.Colors.Accent.Success
+	v12.BackgroundTransparency = 0.1
+	v12.BorderSizePixel = 0
+	v12.ZIndex = 7
+	v12.Parent = v11
+	Helpers.CreateCorner(v12, UIConfig.Corners.Small)
+	v13 = Instance.new("Frame")
+	v13.Name = "Cursor"
+	v13.AnchorPoint = Vector2.new(0.5, 0.5)
+	v13.Position = UDim2.fromScale(0, 0.5)
+	v13.Size = UDim2.fromScale(0.016, 0.92)
+	v13.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	v13.BackgroundTransparency = 0
+	v13.BorderSizePixel = 0
+	v13.ZIndex = 9
+	v13.Parent = v11
+	Helpers.CreateCorner(v13, UIConfig.Corners.Small)
+
+	local Glow = Instance.new("UIStroke")
+
+	Glow.Name = "Glow"
+	Glow.Color = Color3.fromRGB(255, 255, 255)
+	Glow.Thickness = 2
+	Glow.Transparency = 0.35
+	Glow.Parent = v13
+	v48 = Instance.new("TextLabel")
+	v48.Name = "BidPriceLabel"
+	v48.AnchorPoint = Vector2.new(0.5, 0)
+	v48.Position = UDim2.fromScale(0.5, 0)
+	v48.Size = UDim2.fromScale(0.94, 0.16)
+	v48.BackgroundTransparency = 1
+	v48.RichText = true
+	v48.Text = ""
+	v48.Font = UIConfig.Typography.Heading.Font
+	v48.TextScaled = true
+	v48.TextColor3 = UIConfig.Colors.Accent.Success
+	v48.ZIndex = 6
+	v48.Parent = v1
+	Helpers.CreateTextStroke(v48, UIConfig.Stroke.TextHeavy)
+
+	if not v1 then
+		return
+	end
+
+	if not v10 then
+		return
+	end
+
+	v10.AnchorPoint = Vector2.new(0.5, 0.5)
+	v10.Position = UDim2.fromScale(0.5, 0.34)
+	v10.Size = UDim2.fromScale(0.9, 0.24)
+end
+function t2.Open(p1) --[[ Open | Line: 2154 | Upvalues: v1 (ref), v21 (ref), v23 (ref), v24 (ref), v22 (ref), v14 (ref), v16 (ref), v51 (ref), v35 (ref), v10 (ref), applyStandardBidButton (copy), UIConfig (copy), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (copy), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), v28 (ref), TweenService (copy), Helpers (copy), scheduleTutorialBidSpotlight (copy), v3 (ref), result (ref), v25 (ref), v5 (ref), v4 (ref), bindPowerGamepadShortcuts (copy), t9 (copy) ]]
+	if not v1 then
+		return
+	end
+
+	local v13 = v21
+
+	v21 = true
+	v23 = false
+	v24 = false
+
+	if v22 then
+		local v2 = v22
+
+		v22 = nil
+		pcall(function() --[[ Line: 187 | Upvalues: v2 (copy) ]]
+			v2:Hide()
+			task.delay(0.3, function() --[[ Line: 189 | Upvalues: v2 (ref) ]]
+				pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+					v1:Destroy()
+				end)
+			end)
+		end)
+	end
+
+	if v14 then
+		v14.Visible = true
+	end
+
+	if v16 then
+		v16.Visible = false
+	end
+
+	v51 = v51 + 1
+	v35 = false
+
+	if v10 then
+		v10.Visible = true
+		applyStandardBidButton("BID", UIConfig.Colors.Accent.Success)
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+	end
+
+	if not v13 then
+		p1:ShowLeaveButton(false)
+	end
+
+	if v1 and v10 then
+		v10.AnchorPoint = Vector2.new(0.5, 0.5)
+		v10.Position = UDim2.fromScale(0.5, 0.34)
+		v10.Size = UDim2.fromScale(0.9, 0.24)
+	end
+
+	v1.Visible = true
+	v1.Position = UDim2.fromScale(0.5, 1.3)
+
+	if v28 then
+		v28:Cancel()
+		v28 = nil
+	end
+
+	v28 = TweenService:Create(v1, Helpers.TweenInfoFromPreset("SlideIn"), {
+		Position = UDim2.fromScale(0.5, 0.9)
+	})
+	v28:Play()
+	scheduleTutorialBidSpotlight()
+
+	if not v3 then
+		v3 = result.Push({
+			name = "AuctionBidding",
+			onR2 = function() --[[ onR2 | Line: 2224 | Upvalues: v25 (ref), v5 (ref), v4 (ref) ]]
+				if v25 and (v25.Visible and v5) then
+					v5()
+
+					return
+				end
+
+				if not v4 then
+					return
+				end
+
+				v4()
+			end
+		})
+	end
+
+	bindPowerGamepadShortcuts()
+
+	local v32 = result.IsGamepad()
+	local v42 = v14 and v14:FindFirstChild("GamepadGlyph")
+
+	if v42 then
+		v42.Visible = v32
+	end
+
+	local v52 = v25 and v25:FindFirstChild("GamepadGlyph")
+
+	if v52 then
+		v52.Visible = v32
+	end
+
+	for k, v in pairs(t9) do
+		local v6 = if v then v:FindFirstChild("GamepadGlyph") else v
+
+		if v6 then
+			v6.Visible = v32
+		end
+	end
+end
+function t2.Close(p1) --[[ Close | Line: 2254 | Upvalues: v21 (ref), v22 (ref), v3 (ref), result (ref), unbindPowerGamepadShortcuts (copy), v1 (ref), v14 (ref), v16 (ref), v25 (ref), v29 (ref), v49 (ref), v50 (ref), v35 (ref), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (copy), v59 (ref), v60 (ref), v61 (ref), v63 (ref), v62 (ref), Auction (copy), t (copy), v10 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), v28 (ref), TweenService (copy), Helpers (copy) ]]
+	if not v21 then
+		return
+	end
+
+	v21 = false
+
+	if v22 then
+		local v13 = v22
+
+		v22 = nil
+		pcall(function() --[[ Line: 187 | Upvalues: v13 (copy) ]]
+			v13:Hide()
+			task.delay(0.3, function() --[[ Line: 189 | Upvalues: v13 (ref) ]]
+				pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+					v1:Destroy()
+				end)
+			end)
+		end)
+	end
+
+	if v3 then
+		result.Pop(v3)
+		v3 = nil
+	end
+
+	unbindPowerGamepadShortcuts()
+
+	if not v1 then
+		return
+	end
+
+	if v14 then
+		v14.Visible = false
+	end
+
+	if v16 then
+		v16.Visible = false
+	end
+
+	if v25 then
+		v25.Visible = false
+	end
+
+	if v29 then
+		v29:Disconnect()
+		v29 = nil
+	end
+
+	if v49 then
+		v49:Cancel()
+		v49 = nil
+	end
+
+	if v50 then
+		v50:Cancel()
+		v50 = nil
+	end
+
+	v35 = false
+	v58 = false
+
+	if v57 then
+		v57:Disconnect()
+		v57 = nil
+	end
+
+	if v54 then
+		v54.Visible = false
+	end
+
+	updateBidButtonAffordance()
+	v59 = false
+
+	if v60 then
+		v60 = false
+		v61 = nil
+		v63 = false
+		v62 = v62 + 1
+
+		local v2 = Auction
+		local v32 = v2.Name .. "/RequestAuctionPause"
+		local v4 = t[v32]
+		local v5
+
+		if v4 then
+			v5 = v4
+		else
+			local RequestAuctionPause = v2:WaitForChild("RequestAuctionPause", 10)
+
+			if RequestAuctionPause then
+				t[v32] = RequestAuctionPause
+				v5 = RequestAuctionPause
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v32)
+				v5 = nil
+			end
+		end
+
+		if v5 then
+			v5:FireServer(false)
+		end
+
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if v21 and (v10 and (v10.Visible and not v35)) then
+			v33 = math.random() * (1 - v34)
+
+			if v12 then
+				v12.Position = UDim2.fromScale(v33, 0.5)
+			end
+
+			startSlider()
+			startBidBarPulse()
+		end
+	end
+
+	local v6
+
+	if v28 then
+		v28:Cancel()
+		v28 = nil
+	end
+
+	v6 = TweenService:Create(v1, Helpers.TweenInfoFromPreset("Default"), {
+		Position = UDim2.fromScale(0.5, 1.3)
+	})
+	v28 = v6
+	v6:Play()
+	v6.Completed:Once(function(p1) --[[ Line: 2299 | Upvalues: v21 (ref), v1 (ref) ]]
+		if p1 ~= Enum.PlaybackState.Completed or (v21 or not v1) then
+			return
+		end
+
+		v1.Visible = false
+	end)
+end
+function t2.GetPowersRow(p1) --[[ GetPowersRow | Line: 2316 | Upvalues: v9 (ref) ]]
+	return v9
+end
+function t2.GetWinningBidRow(p1) --[[ GetWinningBidRow | Line: 2321 | Upvalues: v7 (ref) ]]
+	return v7
+end
+function t2.RepositionRows(p1) --[[ RepositionRows | Line: 2327 | Upvalues: v1 (ref), v10 (ref) ]]
+	if not v1 then
+		return
+	end
+
+	if not v10 then
+		return
+	end
+
+	v10.AnchorPoint = Vector2.new(0.5, 0.5)
+	v10.Position = UDim2.fromScale(0.5, 0.34)
+	v10.Size = UDim2.fromScale(0.9, 0.24)
+end
+function t2.ShowLeaveButton(p1, p2) --[[ ShowLeaveButton | Line: 2336 | Upvalues: v25 (ref), v14 (ref), v16 (ref), updateBidButtonAffordance (copy) ]]
+	if not v25 then
+		return
+	end
+
+	v25.Visible = p2
+
+	if p2 then
+		if v14 then
+			v14.Visible = false
+		end
+
+		if v16 then
+			v16.Visible = false
+		end
+	else
+		if v14 then
+			v14.Visible = true
+		end
+
+		updateBidButtonAffordance()
+	end
+end
+function t2.ShowBidBar(p1, p2) --[[ ShowBidBar | Line: 2352 | Upvalues: v10 (ref), scheduleTutorialBidSpotlight (copy), v22 (ref), v21 (ref), v1 (ref), v51 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), v35 (ref), updateBidButtonAffordance (copy), v29 (ref), v49 (ref), v50 (ref), applyStandardBidButton (copy), UIConfig (copy) ]]
+	if not v10 then
+		return
+	end
+
+	if p2 then
+		scheduleTutorialBidSpotlight()
+	elseif v22 then
+		local v13 = v22
+
+		v22 = nil
+		pcall(function() --[[ Line: 187 | Upvalues: v13 (copy) ]]
+			v13:Hide()
+			task.delay(0.3, function() --[[ Line: 189 | Upvalues: v13 (ref) ]]
+				pcall(function() --[[ Line: 190 | Upvalues: v1 (ref) ]]
+					v1:Destroy()
+				end)
+			end)
+		end)
+	end
+
+	if v21 and v1 then
+		if not v1.Visible then
+			v1.Visible = true
+		end
+
+		if v1.Position.Y.Scale > 1 then
+			v1.Position = UDim2.fromScale(0.5, 0.9)
+		end
+	end
+
+	if p2 == v10.Visible then
+		return
+	end
+
+	v51 = v51 + 1
+	v10.Visible = p2
+
+	if p2 then
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+		v35 = false
+		updateBidButtonAffordance()
+	else
+		if v29 then
+			v29:Disconnect()
+			v29 = nil
+		end
+
+		if v49 then
+			v49:Cancel()
+			v49 = nil
+		end
+
+		if v50 then
+			v50:Cancel()
+			v50 = nil
+		end
+
+		applyStandardBidButton("WINNING", UIConfig.Colors.Text.Muted)
+	end
+
+	if not v1 then
+		return
+	end
+
+	if not v10 then
+		return
+	end
+
+	v10.AnchorPoint = Vector2.new(0.5, 0.5)
+	v10.Position = UDim2.fromScale(0.5, 0.34)
+	v10.Size = UDim2.fromScale(0.9, 0.24)
+end
+
+local function refreshBidPriceAppearance() --[[ refreshBidPriceAppearance | Line: 2399 | Upvalues: v48 (ref), LocalPlayer (copy), v52 (ref), UIConfig (copy), v53 (ref), updateBidButtonAffordance (copy) ]]
+	if not v48 then
+		return
+	end
+
+	local v2 = if v52 > 0 then (LocalPlayer:GetAttribute("Cash") or 0) < v52 else false
+
+	local function rgb(p1) --[[ rgb | Line: 2405 ]]
+		return string.format("rgb(%d,%d,%d)", math.round(p1.R * 255), math.round(p1.G * 255), (math.round(p1.B * 255)))
+	end
+
+	local v3 = v2 and UIConfig.Colors.Accent.Error or UIConfig.Colors.Accent.Success
+	local format = string.format
+	local v10 = format("<font color=\"%s\">NEXT $%.2f%s</font>", string.format("rgb(%d,%d,%d)", math.round(v3.R * 255), math.round(v3.G * 255), (math.round(v3.B * 255))), v52, if v2 then "  (low cash)" else "")
+
+	if v53 > 0 then
+		local format3 = string.format
+		local Secondary = UIConfig.Colors.Text.Secondary
+		local v17 = string.format("rgb(%d,%d,%d)", math.round(Secondary.R * 255), math.round(Secondary.G * 255), (math.round(Secondary.B * 255)))
+		local Muted = UIConfig.Colors.Text.Muted
+
+		v48.Text = format3("<font color=\"%s\">CURRENT $%.2f</font>  <font color=\"%s\">\226\134\146</font>  %s", v17, v53, string.format("rgb(%d,%d,%d)", math.round(Muted.R * 255), math.round(Muted.G * 255), (math.round(Muted.B * 255))), v10)
+	else
+		v48.Text = v10
+	end
+
+	updateBidButtonAffordance()
+end
+
+function t2.SetPaused(p1, p2, p3) --[[ SetPaused | Line: 2429 | Upvalues: setPausedVisual (copy) ]]
+	setPausedVisual(p2, nil, p3)
+end
+function t2.SetBidPrice(p1, p2, p3) --[[ SetBidPrice | Line: 2438 | Upvalues: v52 (ref), v53 (ref), refreshBidPriceAppearance (copy) ]]
+	v52 = p2
+
+	if p3 ~= nil then
+		v53 = p3
+	end
+
+	refreshBidPriceAppearance()
+end
+function t2.SetDifficulty(p1, p2, p3, p4) --[[ SetDifficulty | Line: 2454 | Upvalues: v32 (ref), Players (copy), t3 (copy), v34 (ref), v36 (ref), v12 (ref) ]]
+	local v1 = math.clamp(p2 or 1, 1, 3.1)
+	local v2 = 0.35 + math.random() * 0.30000000000000004
+	local v3 = v1 ^ (1 - v2)
+
+	v32 = math.min(1 * v1 ^ v2, 2.2)
+
+	if not (Players.LocalPlayer and Players.LocalPlayer:GetAttribute("Tutorial")) then
+		v32 = v32 * 1.05
+	end
+
+	local v4 = p3 or 0
+	local v5 = 0.23
+
+	for i, v in ipairs(t3) do
+		if v <= v4 then
+			v5 = v5 * 0.85
+		end
+	end
+
+	local v6 = p4 or 0
+
+	if v6 >= 1 then
+		local LocalPlayer = Players.LocalPlayer
+		local v7, v8
+
+		if LocalPlayer and LocalPlayer:GetAttribute("BidMinigameHard") then
+			v7 = 0.5
+			v8 = v5
+		else
+			v7 = 0.6666666666666666
+			v8 = v5
+		end
+
+		v34 = v8 * (v7 + (0.14285714285714285 - v7) * math.clamp((v6 - 1) / 10, 0, 1))
+	else
+		v34 = math.max(v5 / v3, 0.085)
+	end
+
+	v36 = 4
+
+	local LocalPlayer = Players.LocalPlayer
+
+	if LocalPlayer then
+		local v9 = LocalPlayer:GetAttribute("Acc_Resilience") or 0
+		local v10 = LocalPlayer:GetAttribute("Acc_BiddingArrowSpeed") or 0
+		local v11 = LocalPlayer:GetAttribute("Acc_BiddingZoneWidth") or 0
+
+		v36 = math.max(0.1, 4 * (1 - v9 / 100))
+		v32 = math.max(0.05, v32 * (1 - v10 / 100))
+		v34 = v34 * (1 + v11 / 100)
+	end
+
+	if not v12 then
+		return
+	end
+
+	v12.Size = UDim2.fromScale(v34, 0.9)
+end
+function t2.SetPowerCallback(p1, p2, p3) --[[ SetPowerCallback | Line: 2507 | Upvalues: t6 (copy) ]]
+	t6[p2] = p3
+end
+function t2.PlayPowerEffect(p1, p2) --[[ PlayPowerEffect | Line: 2514 | Upvalues: t5 (copy), playPowerUseEffect (copy) ]]
+	for v1, v2 in t5 do
+		if v2.Name == p2 then
+			playPowerUseEffect(nil, v2)
+
+			return
+		end
+	end
+end
+function t2.ResetPowerCounts(p1) --[[ ResetPowerCounts | Line: 2524 | Upvalues: Players (copy), t5 (copy), t7 (copy), t8 (copy) ]]
+	local LocalPlayer = Players.LocalPlayer
+
+	for v1, v2 in t5 do
+		local v3 = LocalPlayer:GetAttribute(v2.Attribute) or 0
+
+		t7[v2.Name] = v3
+
+		if t8[v2.Name] then
+			t8[v2.Name].Text = tostring(v3)
+		end
+	end
+end
+
+local function getMutationParticleColor(p1, p2, p3) --[[ getMutationParticleColor | Line: 2560 ]]
+	local v1 = if p3 <= 1 then 0.5 else (p2 - 1) / (p3 - 1)
+
+	if p1.IsRainbow then
+		return Color3.fromHSV(v1, 0.9, 1)
+	end
+
+	if p1.IsChrome then
+		return Color3.fromHSV(0.6388888888888888, 0.08, 0.4 + 0.44999999999999996 * v1)
+	end
+
+	if p1.IsVoid then
+		return Color3.fromHSV(0.78 + 0.05 * (v1 * 2 - 1), 0.9, 0.08 + 0.67 * v1)
+	end
+
+	return p1.UIColor or Color3.new(255/255, 255/255, 255/255)
+end
+
+local v66 = nil
+local v67 = 0
+
+local function clearMutationTheme() --[[ clearMutationTheme | Line: 2579 | Upvalues: v42 (ref), v66 (ref), v67 (ref), t4 (copy), v38 (ref), v39 (ref), v40 (ref), v41 (ref) ]]
+	if v42 then
+		v42:Disconnect()
+		v42 = nil
+	end
+
+	if v66 then
+		v66:Disconnect()
+		v66 = nil
+	end
+
+	v67 = 0
+
+	for v1, v2 in t4 do
+		if v2 and v2.Parent then
+			v2:Destroy()
+		end
+	end
+
+	table.clear(t4)
+	v38 = nil
+	v39 = false
+	v40 = nil
+	v41 = nil
+end
+
+v43 = function() --[[ Line: 2601 | Upvalues: v14 (ref), v41 (ref), getMutationParticleColor (copy), TweenService (copy) ]]
+	if not (v14 and v14.Parent) then
+		return
+	end
+
+	if not v41 then
+		return
+	end
+
+	local AbsolutePosition = v14.AbsolutePosition
+	local AbsoluteSize = v14.AbsoluteSize
+	local v1 = AbsolutePosition.X + AbsoluteSize.X / 2
+	local v2 = AbsolutePosition.Y + AbsoluteSize.Y / 2
+	local v3 = v14
+
+	while v3 and not v3:IsA("ScreenGui") do
+		v3 = v3.Parent
+	end
+
+	if not v3 then
+		return
+	end
+
+	for i = 1, 12 do
+		local BurstParticle = Instance.new("Frame")
+
+		BurstParticle.BackgroundColor3 = getMutationParticleColor(v41, i, 12)
+		BurstParticle.BackgroundTransparency = 0
+		BurstParticle.Name = "BurstParticle"
+		BurstParticle.AnchorPoint = Vector2.new(0.5, 0.5)
+		BurstParticle.BorderSizePixel = 0
+		BurstParticle.ZIndex = 20
+
+		local v4 = math.random(13, 29)
+
+		BurstParticle.Size = UDim2.fromOffset(v4, v4)
+		BurstParticle.Position = UDim2.fromOffset(v1, v2)
+		BurstParticle.Parent = v3
+
+		local v5 = i / 12 * math.pi * 2 + (math.random() - 0.5) * 0.5
+		local v6 = 80 + math.random() * 120
+		local v7 = v1 + math.cos(v5) * v6
+		local v8 = v2 + math.sin(v5) * v6
+		local v9 = TweenService:Create(BurstParticle, TweenInfo.new(1 + math.random() * 0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = UDim2.fromOffset(v7, v8),
+			Size = UDim2.fromOffset(v4 * 0.4, v4 * 0.4)
+		})
+		local v10 = TweenService:Create(BurstParticle, TweenInfo.new(0.8 + math.random() * 0.5, Enum.EasingStyle.Linear), {
+			BackgroundTransparency = 1
+		})
+
+		v9:Play()
+		task.delay(0.4, function() --[[ Line: 2663 | Upvalues: v10 (copy) ]]
+			v10:Play()
+		end)
+		task.delay(2, function() --[[ Line: 2668 | Upvalues: BurstParticle (copy) ]]
+			if not (BurstParticle and BurstParticle.Parent) then
+				return
+			end
+
+			BurstParticle:Destroy()
+		end)
+	end
+end
+
+local function spawnMutationParticles(p1, p2, p3) --[[ spawnMutationParticles | Line: 2689 | Upvalues: v11 (ref), MutatorModule (copy), getMutationParticleColor (copy), t4 (copy), v42 (ref), RunService (copy) ]]
+	if not v11 then
+		warn("[AuctionBidding] spawnMutationParticles: bidBarTrack is nil \226\128\148 skipping")
+
+		return
+	end
+
+	local v1 = #MutatorModule.Mutations
+	local v2 = math.clamp(p2 / v1, 0, 1)
+	local t = {}
+
+	local function getTrackHeight() --[[ getTrackHeight | Line: 2701 | Upvalues: v11 (ref) ]]
+		local Y = v11.AbsoluteSize.Y
+
+		if Y > 0 then
+			return Y
+		end
+
+		local CurrentCamera = workspace.CurrentCamera
+
+		if CurrentCamera then
+			return CurrentCamera.ViewportSize.Y * 0.06
+		end
+
+		return 40
+	end
+
+	local Y = v11.AbsoluteSize.Y
+	local v3
+
+	if Y > 0 then
+		v3 = Y
+	else
+		local CurrentCamera = workspace.CurrentCamera
+
+		v3 = if CurrentCamera then CurrentCamera.ViewportSize.Y * 0.06 else 40
+	end
+
+	local function spawnSet(p1, p2) --[[ spawnSet | Line: 2716 | Upvalues: getMutationParticleColor (ref), v3 (ref), v11 (ref), t4 (ref), t (copy) ]]
+		local v1 = math.floor(p2 * 14 + 6)
+		local v2 = p2 * 0.352 + 0.288
+		local v32 = p2 * 0.022 + 0.008
+		local v4 = 0.45 - p2 * 0.3
+
+		for i = 1, v1 do
+			local MutationParticle = Instance.new("Frame")
+
+			MutationParticle.BackgroundColor3 = getMutationParticleColor(p1, i, v1)
+			MutationParticle.BackgroundTransparency = v4
+			MutationParticle.Name = "MutationParticle"
+			MutationParticle.AnchorPoint = Vector2.new(0.5, 0.5)
+			MutationParticle.BorderSizePixel = 0
+			MutationParticle.ZIndex = 9
+
+			local v5 = math.random()
+			local v6 = 0.15 + math.random() * 0.7
+
+			MutationParticle.Position = UDim2.fromScale(v5, v6)
+
+			local v7 = v2 * (0.7 + math.random() * 0.6)
+			local v10 = math.max(math.floor(v3 * v7), 6)
+
+			MutationParticle.Size = UDim2.fromOffset(v10, v10)
+			MutationParticle.Parent = v11
+			table.insert(t4, MutationParticle)
+			t[#t4] = {
+				x = v5,
+				y = v6,
+				speedX = (math.random() - 0.5) * v32,
+				speedY = -(0.2 + math.random() * 0.5) * v32,
+				phase = math.random() * math.pi * 2,
+				life = math.random() * 5,
+				sizeVar = v7,
+				data = p1,
+				count = v1,
+				intensity = p2,
+				baseTransparency = v4
+			}
+		end
+	end
+
+	spawnSet(p1, v2)
+
+	local v4
+
+	if p3 and p3 ~= p1 then
+		spawnSet(p3, (math.clamp(1 / v1, 0, 1)))
+	end
+
+	v4 = false
+	v42 = RunService.Heartbeat:Connect(function(p1) --[[ Line: 2771 | Upvalues: v4 (ref), v11 (ref), v3 (ref), t4 (ref), t (copy) ]]
+		if not v4 then
+			local Y = v11.AbsoluteSize.Y
+
+			if Y > 0 and Y ~= v3 then
+				v3 = Y
+
+				for v1, v2 in t4 do
+					if v2 and v2.Parent then
+						local v6 = math.max(math.floor(Y * (if t[v1] then t[v1].sizeVar or 0.4 else 0.4)), 6)
+
+						v2.Size = UDim2.fromOffset(v6, v6)
+					end
+				end
+
+				v4 = true
+			elseif Y > 0 then
+				v4 = true
+			end
+		end
+
+		for v7, v8 in t4 do
+			local v9 = t[v7]
+
+			if v9 and (v8 and v8.Parent) then
+				v9.life = v9.life + p1
+				v9.x = v9.x + v9.speedX * p1 * 60
+				v9.y = v9.y + v9.speedY * p1 * 60
+
+				if v9.data and v9.data.IsRainbow then
+					v8.BackgroundColor3 = Color3.fromHSV((v9.life * 0.5 + (v7 - 1) / v9.count) % 1, 0.9, 1)
+				end
+
+				v8.BackgroundTransparency = math.clamp(v9.baseTransparency + math.sin(v9.life * (3 + v9.intensity * 4) + v9.phase) * 0.12, 0, 0.85)
+
+				if v9.x > 1.05 then
+					v9.x = -0.05
+				end
+
+				if v9.x < -0.05 then
+					v9.x = 1.05
+				end
+
+				if v9.y < -0.15 then
+					v9.y = 1.15
+					v9.x = math.random()
+				end
+
+				v8.Position = UDim2.fromScale(v9.x, v9.y)
+			end
+		end
+	end)
+end
+
+local function startColorCycling(p1) --[[ startColorCycling | Line: 2829 | Upvalues: v66 (ref), v67 (ref), RunService (copy), v11 (ref) ]]
+	if v66 then
+		v66:Disconnect()
+	end
+
+	v67 = 0
+	v66 = RunService.Heartbeat:Connect(function(p1) --[[ Line: 2835 | Upvalues: v67 (ref), v11 (ref), p1 (copy) ]]
+		v67 = v67 + p1
+
+		if not (v11 and v11.Parent) then
+			return
+		end
+
+		local v1 = nil
+		local v2 = nil
+
+		if p1.IsRainbow then
+			local v3 = v67 * 0.15 % 1
+			local v4 = Color3.fromHSV(v3, 0.8, 0.18)
+
+			v1, v2 = v4, Color3.fromHSV(v3, 0.7, 0.35)
+		elseif p1.IsChrome then
+			local v7 = (math.cos(v67 % 2 / 2 * math.pi * 2) + 1) / 2
+			local v8 = v7 * v7 * 0.44999999999999996 + 0.4
+			local v9 = Color3.fromHSV(0.6388888888888888, 0.08, v8 * 0.22)
+
+			v1, v2 = v9, Color3.fromHSV(0.6388888888888888, 0.08, v8 * 0.45)
+		elseif p1.IsVoid then
+			local v112 = v67 * 0.15 % 1
+			local v122 = math.sin(v112 * math.pi * 2) * 0.05 + 0.78
+			local v13 = (math.cos(v112 * math.pi * 2) + 1) * 0.67 / 2 + 0.08
+			local v14 = Color3.fromHSV(v122, 0.9, v13 * 0.25)
+
+			v1, v2 = v14, Color3.fromHSV(v122, 0.7, v13 * 0.5)
+		end
+
+		if not v1 then
+			return
+		end
+
+		v11.BackgroundColor3 = v1
+
+		local v162 = v11:FindFirstChildWhichIsA("UIStroke")
+
+		if not v162 then
+			return
+		end
+
+		v162.Color = v2
+	end)
+end
+
+function t2.SetMutationTheme(p1, p2, p3, p4) --[[ SetMutationTheme | Line: 2878 | Upvalues: v11 (ref), v12 (ref), clearMutationTheme (copy), MutatorModule (copy), v37 (ref), v44 (ref), UIConfig (copy), v46 (ref), v45 (copy), v47 (ref), v38 (ref), v41 (ref), spawnMutationParticles (copy), v39 (ref), v40 (ref), v66 (ref), v67 (ref), RunService (copy) ]]
+	if not (v11 and v12) then
+		return
+	end
+
+	clearMutationTheme()
+
+	local v1 = p4 and MutatorModule:GetEventMutationByName(p4) or nil
+
+	if p2 then
+		local v2 = nil
+		local v3 = 0
+
+		for v4, v5 in MutatorModule.Mutations do
+			if v5.Name == p2 then
+				v2 = v5
+				v3 = v4
+
+				break
+			end
+		end
+
+		if not v2 then
+			return
+		end
+
+		v37 = p2
+
+		local UIColor = v2.UIColor
+
+		v38 = UIColor
+		v39 = v2.IsRainbow or false
+		v40 = p3
+
+		local v6, v7, v8 = UIColor:ToHSV()
+		local v9 = Color3.fromHSV(v6, math.min(v7 * 1.1, 1), v8 * 0.18)
+		local v10 = Color3.fromHSV(v6, math.min(v7 * 0.9, 1), (math.min(v8 * 0.9, 1)))
+		local v112 = Color3.fromHSV(v6, math.min(v7 * 0.7, 1), v8 * 0.35)
+
+		if p2 == "Black" then
+			local v122 = Color3.fromRGB(8, 8, 8)
+			local v13 = Color3.fromRGB(50, 50, 50)
+
+			v9, v10, v112 = v122, v13, Color3.fromRGB(30, 30, 30)
+		end
+
+		v11.BackgroundColor3 = v9
+		v11.BackgroundTransparency = 0.05
+		v12.BackgroundColor3 = v10
+		v12.BackgroundTransparency = 0.1
+
+		local v15 = v11:FindFirstChildWhichIsA("UIStroke")
+
+		if v15 then
+			v15.Color = v112
+		end
+
+		if v2.IsRainbow or (v2.IsChrome or v2.IsVoid) then
+			local v16 = v2
+
+			if v66 then
+				v66:Disconnect()
+			end
+
+			v67 = 0
+			v66 = RunService.Heartbeat:Connect(function(p1) --[[ Line: 2835 | Upvalues: v67 (ref), v11 (ref), v16 (copy) ]]
+				v67 = v67 + p1
+
+				if not (v11 and v11.Parent) then
+					return
+				end
+
+				local v1 = nil
+				local v2 = nil
+
+				if v16.IsRainbow then
+					local v3 = v67 * 0.15 % 1
+					local v4 = Color3.fromHSV(v3, 0.8, 0.18)
+
+					v1, v2 = v4, Color3.fromHSV(v3, 0.7, 0.35)
+				elseif v16.IsChrome then
+					local v7 = (math.cos(v67 % 2 / 2 * math.pi * 2) + 1) / 2
+					local v8 = v7 * v7 * 0.44999999999999996 + 0.4
+					local v9 = Color3.fromHSV(0.6388888888888888, 0.08, v8 * 0.22)
+
+					v1, v2 = v9, Color3.fromHSV(0.6388888888888888, 0.08, v8 * 0.45)
+				elseif v16.IsVoid then
+					local v112 = v67 * 0.15 % 1
+					local v122 = math.sin(v112 * math.pi * 2) * 0.05 + 0.78
+					local v13 = (math.cos(v112 * math.pi * 2) + 1) * 0.67 / 2 + 0.08
+					local v14 = Color3.fromHSV(v122, 0.9, v13 * 0.25)
+
+					v1, v2 = v14, Color3.fromHSV(v122, 0.7, v13 * 0.5)
+				end
+
+				if not v1 then
+					return
+				end
+
+				v11.BackgroundColor3 = v1
+
+				local v162 = v11:FindFirstChildWhichIsA("UIStroke")
+
+				if not v162 then
+					return
+				end
+
+				v162.Color = v2
+			end)
+		end
+
+		v41 = v2
+		spawnMutationParticles(v2, v3, v1)
+	else
+		v37 = nil
+		v11.BackgroundColor3 = v44 or UIConfig.Colors.Panel.Background
+		v11.BackgroundTransparency = v46 or UIConfig.Transparency.PanelBackground
+		v12.BackgroundColor3 = v45
+		v12.BackgroundTransparency = 0.15
+
+		local v21 = v11:FindFirstChildWhichIsA("UIStroke")
+
+		if v21 and v47 then
+			v21.Color = v47
+		end
+
+		if not v1 then
+			return
+		end
+
+		v37 = p4
+		v38 = v1.UIColor
+		v41 = v1
+		spawnMutationParticles(v1, 1)
+	end
+end
+LocalPlayer:GetAttributeChangedSignal("Cash"):Connect(function() --[[ Line: 2961 | Upvalues: refreshBidPriceAppearance (copy), tryAutoBidAfterCashPurchase (copy) ]]
+	refreshBidPriceAppearance()
+	tryAutoBidAfterCashPurchase()
+end)
+MarketplaceService.PromptProductPurchaseFinished:Connect(function(p1, p2, p3) --[[ Line: 2966 | Upvalues: LocalPlayer (copy), v60 (ref), v61 (ref), v63 (ref), v62 (ref), Auction (copy), t (copy), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (copy), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (copy), startBidBarPulse (copy), ReplicatedStorage (copy), v55 (ref), tryAutoBidAfterCashPurchase (copy), showFloatingResult (copy), UIConfig (copy) ]]
+	if not (if p1 == LocalPlayer.UserId then true else p1 == LocalPlayer) then
+		return
+	end
+
+	if not v60 then
+		return
+	end
+
+	if v61 ~= tonumber(p2) then
+		return
+	end
+
+	if p3 then
+		local ok, result = pcall(function() --[[ Line: 2977 | Upvalues: ReplicatedStorage (ref) ]]
+			return require(ReplicatedStorage.Modules.Screens.PurchaseCelebration)
+		end)
+
+		if ok and (result and result.PlayProductPurchase) then
+			result:PlayProductPurchase(p2)
+		end
+
+		v63 = true
+
+		local v2
+
+		if v55 then
+			v55.Text = "Adding cash..."
+		end
+
+		tryAutoBidAfterCashPurchase()
+		v2 = v62
+		task.delay(15, function() --[[ Line: 2991 | Upvalues: v60 (ref), v63 (ref), v62 (ref), v2 (copy), v61 (ref), Auction (ref), t (ref), v58 (ref), v57 (ref), v54 (ref), updateBidButtonAffordance (ref), v21 (ref), v10 (ref), v35 (ref), v33 (ref), v34 (ref), v12 (ref), startSlider (ref), startBidBarPulse (ref), showFloatingResult (ref), UIConfig (ref) ]]
+			if not v60 or (not v63 or v62 ~= v2) then
+				return
+			end
+
+			if v60 then
+				v60 = false
+				v61 = nil
+				v63 = false
+				v62 = v62 + 1
+
+				local v1 = Auction
+				local v22 = v1.Name .. "/RequestAuctionPause"
+				local v3 = t[v22]
+				local v4
+
+				if v3 then
+					v4 = v3
+				else
+					local RequestAuctionPause = v1:WaitForChild("RequestAuctionPause", 10)
+
+					if RequestAuctionPause then
+						t[v22] = RequestAuctionPause
+						v4 = RequestAuctionPause
+					else
+						warn("[AuctionBidding] Remote never appeared: " .. v22)
+						v4 = nil
+					end
+				end
+
+				if v4 then
+					v4:FireServer(false)
+				end
+
+				v58 = false
+
+				if v57 then
+					v57:Disconnect()
+					v57 = nil
+				end
+
+				if v54 then
+					v54.Visible = false
+				end
+
+				updateBidButtonAffordance()
+
+				if v21 and (v10 and (v10.Visible and not v35)) then
+					v33 = math.random() * (1 - v34)
+
+					if v12 then
+						v12.Position = UDim2.fromScale(v33, 0.5)
+					end
+
+					startSlider()
+					startBidBarPulse()
+				end
+			end
+
+			showFloatingResult("Cash is still processing", UIConfig.Colors.Accent.Warning)
+		end)
+	else
+		if not v60 then
+			return
+		end
+
+		v60 = false
+		v61 = nil
+		v63 = false
+		v62 = v62 + 1
+
+		local v3 = Auction
+		local v4 = v3.Name .. "/RequestAuctionPause"
+		local v5 = t[v4]
+		local v6
+
+		if v5 then
+			v6 = v5
+		else
+			local RequestAuctionPause = v3:WaitForChild("RequestAuctionPause", 10)
+
+			if RequestAuctionPause then
+				t[v4] = RequestAuctionPause
+				v6 = RequestAuctionPause
+			else
+				warn("[AuctionBidding] Remote never appeared: " .. v4)
+				v6 = nil
+			end
+		end
+
+		if v6 then
+			v6:FireServer(false)
+		end
+
+		v58 = false
+
+		if v57 then
+			v57:Disconnect()
+			v57 = nil
+		end
+
+		if v54 then
+			v54.Visible = false
+		end
+
+		updateBidButtonAffordance()
+
+		if not v21 or (not v10 or (not v10.Visible or v35)) then
+			return
+		end
+
+		v33 = math.random() * (1 - v34)
+
+		if v12 then
+			v12.Position = UDim2.fromScale(v33, 0.5)
+		end
+
+		startSlider()
+		startBidBarPulse()
+	end
+end)
+
+return t2
