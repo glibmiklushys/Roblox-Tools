@@ -1,0 +1,512 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+
+-- ==========================================
+-- 0. COLOR PALETTE & TWEEN CONFIG
+-- ==========================================
+local PALETTE = {
+    Background      = Color3.fromRGB(15, 15, 20),
+    TopBar          = Color3.fromRGB(22, 22, 28),
+    Border          = Color3.fromRGB(42, 42, 55),
+    AccentCyan      = Color3.fromRGB(0, 212, 255),
+    TextWhite       = Color3.fromRGB(245, 245, 250),
+    TextMuted       = Color3.fromRGB(140, 140, 160),
+    
+    BtnNeutral      = Color3.fromRGB(32, 32, 42),
+    BtnAction       = Color3.fromRGB(41, 98, 217),
+    BtnFE           = Color3.fromRGB(114, 41, 217),
+    
+    ToggleOff       = Color3.fromRGB(168, 45, 60),
+    ToggleOn        = Color3.fromRGB(43, 168, 95)
+}
+
+local animStyle = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
+-- Helper to inject ultra-smooth hover & click tweens into any button instantly
+local function applyModernInteractiveTweens(btn, normalColor)
+    btn.BackgroundColor3 = normalColor
+    btn:SetAttribute("CurrentBaseColor", normalColor)
+    btn.AutoButtonColor = false
+    
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = PALETTE.AccentCyan
+    stroke.Transparency = 1 
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    btn.MouseEnter:Connect(function()
+        local base = btn:GetAttribute("CurrentBaseColor")
+        local hovered = base:Lerp(Color3.new(1,1,1), 0.12)
+        TweenService:Create(btn, animStyle, {BackgroundColor3 = hovered}):Play()
+        TweenService:Create(stroke, animStyle, {Transparency = 0.35}):Play()
+    end)
+
+    btn.MouseLeave:Connect(function()
+        local base = btn:GetAttribute("CurrentBaseColor")
+        TweenService:Create(btn, animStyle, {BackgroundColor3 = base}):Play()
+        TweenService:Create(stroke, animStyle, {Transparency = 1}):Play()
+    end)
+
+    btn.MouseButton1Down:Connect(function()
+        local base = btn:GetAttribute("CurrentBaseColor")
+        local pressed = base:Lerp(Color3.new(0,0,0), 0.2)
+        TweenService:Create(btn, TweenInfo.new(0.04), {BackgroundColor3 = pressed}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.04), {Transparency = 0}):Play()
+    end)
+
+    btn.MouseButton1Up:Connect(function()
+        local base = btn:GetAttribute("CurrentBaseColor")
+        local hovered = base:Lerp(Color3.new(1,1,1), 0.12)
+        TweenService:Create(btn, animStyle, {BackgroundColor3 = hovered}):Play()
+        TweenService:Create(stroke, animStyle, {Transparency = 0.35}):Play()
+    end)
+end
+
+-- Helper to morph toggle states smoothly
+local function morphToggleVisuals(btn, isOn, textPrefix)
+    local targetColor = isOn and PALETTE.ToggleOn or PALETTE.ToggleOff
+    btn:SetAttribute("CurrentBaseColor", targetColor)
+    btn.Text = textPrefix .. (isOn and ": ON" or ": OFF")
+    TweenService:Create(btn, animStyle, {BackgroundColor3 = targetColor}):Play()
+end
+
+-- ==========================================
+-- 1. GUI CONSTRUCTION (Dynamic Auto-Layout)
+-- ==========================================
+-- Safe GUI Parenting for all Executors
+local parentGui = player:WaitForChild("PlayerGui")
+pcall(function()
+    if gethui then
+        parentGui = gethui()
+    else
+        parentGui = game:GetService("CoreGui")
+    end
+end)
+
+if parentGui:FindFirstChild("NexusModernGUI") then
+    parentGui.NexusModernGUI:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "NexusModernGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = parentGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 245, 0, 0) -- Starts at 0 height for the pop-in intro tween
+mainFrame.Position = UDim2.new(0.5, -122, 0.5, -187)
+mainFrame.BackgroundColor3 = PALETTE.Background
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Active = true
+mainFrame.Draggable = true 
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner", mainFrame)
+mainCorner.CornerRadius = UDim.new(0, 8)
+
+local mainStroke = Instance.new("UIStroke", mainFrame)
+mainStroke.Color = PALETTE.Border
+mainStroke.Thickness = 2
+
+-- Header Bar
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 36)
+topBar.BackgroundColor3 = PALETTE.TopBar
+topBar.BorderSizePixel = 0
+topBar.Parent = mainFrame
+
+local topCorner = Instance.new("UICorner", topBar)
+topCorner.CornerRadius = UDim.new(0, 8)
+
+-- Square off the bottom corners of the top bar so it connects seamlessly to the body
+local topBarFix = Instance.new("Frame")
+topBarFix.Size = UDim2.new(1, 0, 0, 8)
+topBarFix.Position = UDim2.new(0, 0, 1, -8)
+topBarFix.BackgroundColor3 = PALETTE.TopBar
+topBarFix.BorderSizePixel = 0
+topBarFix.Parent = topBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -30, 1, 0)
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "NEXUS PANEL"
+title.Font = Enum.Font.GothamBold
+title.TextColor3 = PALETTE.TextWhite
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = topBar
+
+local titleAccent = Instance.new("Frame")
+titleAccent.Size = UDim2.new(0, 6, 0, 6)
+titleAccent.Position = UDim2.new(1, -20, 0.5, -3)
+titleAccent.BackgroundColor3 = PALETTE.AccentCyan
+titleAccent.Parent = topBar
+local accentCorner = Instance.new("UICorner", titleAccent)
+accentCorner.CornerRadius = UDim.new(1, 0)
+
+-- Body Container
+local contentFrame = Instance.new("Frame")
+contentFrame.Size = UDim2.new(1, -24, 1, -50)
+contentFrame.Position = UDim2.new(0, 12, 0, 44)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout", contentFrame)
+listLayout.Padding = UDim.new(0, 8)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Button Generator Factory
+local function createMenuButton(text, layoutOrder, defaultColor)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 34)
+    btn.LayoutOrder = layoutOrder
+    btn.Font = Enum.Font.GothamMedium
+    btn.Text = text
+    btn.TextColor3 = PALETTE.TextWhite
+    btn.TextSize = 13
+    btn.Parent = contentFrame
+
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 6)
+
+    applyModernInteractiveTweens(btn, defaultColor)
+    return btn
+end
+
+-- Generate UI Stack
+local toggleButton   = createMenuButton("Auto-Bid: OFF", 1, PALETTE.ToggleOff)
+local tpUnloadButton = createMenuButton("TP to Unload", 2, PALETTE.BtnAction)
+local tpSecretButton = createMenuButton("TP to Secret", 3, PALETTE.BtnAction)
+local invTriggerBtn  = createMenuButton("Inv Trigger: OFF", 4, PALETTE.ToggleOff)
+local feScriptButton = createMenuButton("Execute FE Script", 5, PALETTE.BtnFE)
+local proximityToggle= createMenuButton("Insta Prompts: OFF", 6, PALETTE.ToggleOff)
+
+-- Walkspeed Group (LayoutOrder 7)
+local speedGroup = Instance.new("Frame")
+speedGroup.Size = UDim2.new(1, 0, 0, 52)
+speedGroup.LayoutOrder = 7
+speedGroup.BackgroundTransparency = 1
+speedGroup.Parent = contentFrame
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(1, 0, 0, 14)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "WalkSpeed Override"
+speedLabel.Font = Enum.Font.GothamMedium
+speedLabel.TextColor3 = PALETTE.TextMuted
+speedLabel.TextSize = 11
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = speedGroup
+
+local speedControls = Instance.new("Frame")
+speedControls.Size = UDim2.new(1, 0, 0, 32)
+speedControls.Position = UDim2.new(0, 0, 0, 18)
+speedControls.BackgroundTransparency = 1
+speedControls.Parent = speedGroup
+
+local Minus = Instance.new("TextButton")
+Minus.Size = UDim2.new(0, 34, 1, 0)
+Minus.Font = Enum.Font.GothamBold
+Minus.Text = "-"
+Minus.TextColor3 = PALETTE.TextWhite
+Minus.TextSize = 16
+Minus.Parent = speedControls
+local cornerMinus = Instance.new("UICorner", Minus)
+cornerMinus.CornerRadius = UDim.new(0, 6)
+applyModernInteractiveTweens(Minus, PALETTE.BtnNeutral)
+
+local Num = Instance.new("TextBox")
+Num.Size = UDim2.new(1, -78, 1, 0)
+Num.Position = UDim2.new(0, 39, 0, 0)
+Num.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+Num.Font = Enum.Font.GothamMedium
+Num.TextColor3 = PALETTE.AccentCyan
+Num.TextSize = 14
+Num.ClearTextOnFocus = true
+Num.Parent = speedControls
+local cornerNum = Instance.new("UICorner", Num)
+cornerNum.CornerRadius = UDim.new(0, 6)
+local strokeNum = Instance.new("UIStroke", Num)
+strokeNum.Color = PALETTE.Border
+strokeNum.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local Plus = Instance.new("TextButton")
+Plus.Size = UDim2.new(0, 34, 1, 0)
+Plus.Position = UDim2.new(1, -34, 0, 0)
+Plus.Font = Enum.Font.GothamMedium
+Plus.Text = "+"
+Plus.TextColor3 = PALETTE.TextWhite
+Plus.TextSize = 16
+Plus.Parent = speedControls
+local cornerPlus = Instance.new("UICorner", Plus)
+cornerPlus.CornerRadius = UDim.new(0, 6)
+applyModernInteractiveTweens(Plus, PALETTE.BtnNeutral)
+
+-- Trigger the gorgeous opening intro animation
+TweenService:Create(mainFrame, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 245, 0, 375)}):Play()
+
+
+-- ==========================================
+-- 2. CORE SYSTEM LOGIC
+-- ==========================================
+local number = 100 
+local speedConnection = nil
+local isInstaPromptActive = false
+local proximityConnection = nil
+local originalDurations = {} 
+local isInvTriggering = false
+local invTriggerLoop = nil
+
+local function getMyPlot()
+    local plots = workspace:FindFirstChild("_Plots")
+    if not plots then return nil end
+    for i = 1, 12 do
+        local p = plots:FindFirstChild("Plot" .. i)
+        if p and p:FindFirstChild("Furniture") then
+            local sign = p.Furniture:FindFirstChild("Shop Sign 4")
+            if sign then
+                for _, child in ipairs(sign:GetChildren()) do
+                    local gui = child:FindFirstChild("Part") and child.Part:FindFirstChild("SurfaceGui")
+                    if gui and gui:FindFirstChild("TextLabel") and string.find(string.lower(gui.TextLabel.Text), string.lower(player.DisplayName)) then
+                        return p
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function UpdateNum()
+    Num.Text = tostring(number)
+end
+
+local function setupCharacterSpeed(character)
+    if not character then return end
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    if not humanoid then return end
+
+    humanoid.WalkSpeed = number
+    UpdateNum()
+
+    if speedConnection then speedConnection:Disconnect() end
+    speedConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+        if humanoid.WalkSpeed ~= number then
+            humanoid.WalkSpeed = number 
+            UpdateNum()
+        end
+    end)
+end
+
+
+-- ==========================================
+-- 3. EVENT BINDINGS
+-- ==========================================
+
+-- Auto-Bid
+local isTracking, renderConnection, debounce = false, nil, false
+toggleButton.MouseButton1Click:Connect(function()
+    isTracking = not isTracking
+    morphToggleVisuals(toggleButton, isTracking, "Auto-Bid")
+    
+    if isTracking then
+        renderConnection = RunService.RenderStepped:Connect(function()
+            pcall(function()
+                -- Dynamically find the event inside the loop to prevent script hanging on inject
+                local bidEvent = ReplicatedStorage:FindFirstChild("Events")
+                if bidEvent then bidEvent = bidEvent:FindFirstChild("Auction") end
+                if bidEvent then bidEvent = bidEvent:FindFirstChild("Bid") end
+                
+                local track = player.PlayerGui.UIControllerGui.AuctionBiddingContainer.BidBarRow.Track
+                if bidEvent and (track.Cursor.AbsolutePosition - track.BidZone.AbsolutePosition).Magnitude <= 5 and not debounce then
+                    debounce = true
+                    bidEvent:FireServer()
+                    task.delay(0.5, function() debounce = false end)
+                end
+            end)
+        end)
+    else
+        if renderConnection then renderConnection:Disconnect() end
+    end
+end)
+
+-- TP Unload
+tpUnloadButton.MouseButton1Click:Connect(function()
+    local myPlot = getMyPlot()
+    local zone = (myPlot and myPlot:FindFirstChild("UnpackZone", true)) or workspace:FindFirstChild("UnpackZone", true)
+    if zone then 
+        player.Character:PivotTo(zone:GetPivot() + Vector3.new(0, 5, 0)) 
+    end
+    
+    task.wait(0.2)
+    pcall(function()
+        local unloadBtn = player.PlayerGui.UIControllerGui.UnloadVehiclePanel.Footer.Buttons.UnloadSelectedBtn
+        if unloadBtn and getconnections then
+            for _, connection in pairs(getconnections(unloadBtn.MouseButton1Click)) do
+                connection:Fire()
+            end
+        end
+    end)
+end)
+
+-- TP Secret
+tpSecretButton.MouseButton1Click:Connect(function()
+    local targetCFrame = CFrame.new(-113.605278, 1723.84473, -1224.98145, 0.996251822, -6.73863769e-06, 0.0865002424, 6.18254353e-06, 1, 6.69671726e-06, -0.0865002424, -6.13682505e-06, 0.996251822)
+    player.Character:PivotTo(targetCFrame)
+end)
+
+-- Inv Trigger Toggle
+invTriggerBtn.MouseButton1Click:Connect(function()
+    isInvTriggering = not isInvTriggering
+    morphToggleVisuals(invTriggerBtn, isInvTriggering, "Inv Trigger")
+    
+    if isInvTriggering then
+        invTriggerLoop = task.spawn(function()
+            while isInvTriggering do
+                local playerGui = player:FindFirstChild("PlayerGui")
+                if playerGui then
+                    local shelfPicker = playerGui:FindFirstChild("ShelfItemPicker")
+                    
+                    if not shelfPicker then
+                        for _, gui in pairs(playerGui:GetChildren()) do
+                            if gui:FindFirstChild("AddBtn") and getconnections then
+                                for _, connection in pairs(getconnections(gui.AddBtn.MouseButton1Click)) do
+                                    connection:Fire()
+                                end
+                                break
+                            end
+                        end
+                        task.wait(0.4) 
+                        shelfPicker = playerGui:FindFirstChild("ShelfItemPicker")
+                    end
+                    
+                    if shelfPicker then
+                        local panel = shelfPicker:FindFirstChild("ShelfPickerPanel")
+                        local content = panel and panel:FindFirstChild("Content")
+                        
+                        if content then
+                            for _, item in pairs(content:GetChildren()) do
+                                if not isInvTriggering then break end
+                                
+                                if (item:IsA("TextButton") or item:IsA("GuiButton")) and string.match(item.Name, "^Item_") and getconnections then 
+                                    for _, connection in pairs(getconnections(item.MouseButton1Click)) do
+                                        connection:Fire()
+                                    end
+                                    task.wait(0.05)
+                                    
+                                    local confirmPrompt = panel:FindFirstChild("ConfirmPrompt")
+                                    if confirmPrompt and confirmPrompt.Visible ~= false then
+                                        local confirmBtn = confirmPrompt:FindFirstChild("ConfirmButton", true)
+                                        if confirmBtn and getconnections then
+                                            for _, cConn in pairs(getconnections(confirmBtn.MouseButton1Click)) do
+                                                cConn:Fire()
+                                            end
+                                            task.wait(0.05) 
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                task.wait(0.5) 
+            end
+        end)
+    else
+        if invTriggerLoop then task.cancel(invTriggerLoop) end
+    end
+end)
+
+-- FE Script Execution
+feScriptButton.MouseButton1Click:Connect(function()
+    pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/0Ben1/fe/main/obf_rf6iQURzu1fqrytcnLBAvW34C9N55kS9g9G3CKz086rC47M6632sEd4ZZYB0AYgV.lua.txt"))()
+    end)
+end)
+
+-- Proximity Toggle Logic
+proximityToggle.MouseButton1Click:Connect(function()
+    isInstaPromptActive = not isInstaPromptActive
+    morphToggleVisuals(proximityToggle, isInstaPromptActive, "Insta Prompts")
+    
+    if isInstaPromptActive then
+        for _, v in ipairs(game:GetService("Workspace"):GetDescendants()) do
+            if v:IsA("ProximityPrompt") then
+                if not originalDurations[v] then originalDurations[v] = v.HoldDuration end
+                v.HoldDuration = 0
+            end
+        end
+        
+        proximityConnection = game:GetService("Workspace").DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("ProximityPrompt") then
+                task.defer(function()
+                    if isInstaPromptActive and descendant:IsDescendantOf(workspace) then
+                        if not originalDurations[descendant] then originalDurations[descendant] = descendant.HoldDuration end
+                        descendant.HoldDuration = 0
+                    end
+                end)
+            end
+        end)
+    else
+        if proximityConnection then proximityConnection:Disconnect(); proximityConnection = nil end
+        for prompt, originalValue in pairs(originalDurations) do
+            if prompt and prompt.Parent then pcall(function() prompt.HoldDuration = originalValue end) end
+        end
+        table.clear(originalDurations)
+    end
+end)
+
+-- WalkSpeed Events
+Plus.MouseButton1Click:Connect(function()
+    number = number + 1
+    if player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid.WalkSpeed = number
+    end
+    UpdateNum()
+end)
+
+Minus.MouseButton1Click:Connect(function()
+    if number > 0 then
+        number = number - 1
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = number
+        end
+        UpdateNum()
+    end
+end)
+
+Num.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local Value = tonumber(Num.Text)
+        if Value and Value > 0 then
+            number = Value
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                player.Character.Humanoid.WalkSpeed = number
+            end
+            UpdateNum()
+        else
+            UpdateNum()
+        end
+    end
+end)
+
+-- Hook initial speed tracking and respawn handling
+player.CharacterAdded:Connect(setupCharacterSpeed)
+if player.Character then setupCharacterSpeed(player.Character) end
+UpdateNum()
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Nexus Hub Succeeded",
+    Text = "Modern UI hooked. Built by the_king.78",
+    Duration = 8
+})
